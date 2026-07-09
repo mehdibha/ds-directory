@@ -1,6 +1,6 @@
+import { getSystem } from '@/data/index'
 import { DerivedColorsExplorer } from '@/components/explorer/derived-colors'
 import { SectionNotes } from '@/components/explorer/section-notes'
-import { getSystem } from '@/data/index'
 
 import { Block, Section } from '../../primitives'
 

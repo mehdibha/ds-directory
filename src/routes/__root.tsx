@@ -10,11 +10,11 @@ import {
 import { ThemeProvider } from 'starter-themes'
 
 import { siteConfig } from '@/config/site'
+import { LinkButton } from '@/ui/button'
 import { GitHubIcon } from '@/components/icons/github'
 import { ProgressiveBlur } from '@/components/progressive-blur'
 import { SystemTocSelect } from '@/components/system/toc-select'
 import { ThemeToggle } from '@/components/theme-toggle'
-import { LinkButton } from '@/ui/button'
 
 import appCss from '@/styles.css?url'
 
@@ -69,7 +69,7 @@ function RootDocument() {
             </div>
             <nav className="flex items-center gap-1 text-sm text-fg-muted">
               <LinkButton
-                href="https://github.com/mehdibha/dotUI/tree/main/ds"
+                href="https://github.com/mehdibha/ds-directory"
                 aria-label="GitHub"
                 variant="quiet"
                 size="sm"

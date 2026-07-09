@@ -3,8 +3,8 @@
 import { Fragment, useMemo, useState } from 'react'
 
 import { cn } from '@/lib/utils'
-import { isPaintable } from '@/components/explorer/swatch'
 import { SearchField } from '@/ui/search-field'
+import { isPaintable } from '@/components/explorer/swatch'
 
 import { Block, Note, Section } from '../../primitives'
 import type { BaseColor, ColorTheme, Mode } from './data'

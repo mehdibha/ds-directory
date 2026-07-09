@@ -3,8 +3,8 @@
 import { useState, type ReactNode } from 'react'
 import { ArrowDownIcon } from 'lucide-react'
 
-import { LayerDiagram } from '@/components/explorer/layer-diagram'
 import type { CatalogEntry, SystemWithColors } from '@/data/schema'
+import { LayerDiagram } from '@/components/explorer/layer-diagram'
 
 import {
   Block,

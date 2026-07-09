@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 
+import type { SystemWithColors } from '@/data/schema'
 import { ContrastLab } from '@/components/explorer/contrast-lab'
 import { ContrastTable } from '@/components/explorer/contrast-table'
 import { DerivedColorsExplorer } from '@/components/explorer/derived-colors'
@@ -10,7 +11,6 @@ import { RampGrid } from '@/components/explorer/ramp-grid'
 import { SectionNotes } from '@/components/explorer/section-notes'
 import { SpecTable } from '@/components/explorer/spec-table'
 import { TokenTable } from '@/components/explorer/token-table'
-import type { SystemWithColors } from '@/data/schema'
 
 import { Block, Section } from '../primitives'
 
