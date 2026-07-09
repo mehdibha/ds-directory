@@ -1,10 +1,19 @@
-# ds — ds.dotui.org
+# ds-directory — ds.dotui.org
 
-Documents how popular design systems are built, as structured per-system data
-(`systems/<slug>/system.json` + `colors.json`) rendered by shared explorer
-components. TanStack Start + Vite; Zod schemas in `src/data/schema.ts`
-(additive changes only). `data/catalog.json` is the scored recon catalog;
-`data/_archive/` holds shelved systems the build ignores.
+A public directory of design systems: documents how popular systems are built,
+as structured per-system data (`systems/<slug>/system.json` + `colors.json`)
+rendered by shared explorer components. TanStack Start + Vite; Zod schemas in
+`src/data/schema.ts` (additive changes only). `data/catalog.json` is the
+scored recon catalog; `data/_archive/` holds shelved systems the build ignores.
+
+Split out of the `mehdibha/dotUI` monorepo (2026-07, history preserved).
+Sister repo: `mehdibha/colors` (colors.dotui.org — the color learning path);
+its case-study chapters may consume this repo's extracted `colors.json` data
+via vendored snapshots. This repo's shadcn `colors.json` also serves as the
+pinned-SHA ground truth dotUI uses to verify its color axis.
+
+Deploys: Vercel project `dotui-ds`, production branch `main`, domain
+ds.dotui.org — pushing main goes live.
 
 ## Data pipeline (the rules)
 
