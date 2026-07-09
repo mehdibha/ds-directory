@@ -1,9 +1,9 @@
 import { createFileRoute, notFound } from '@tanstack/react-router'
 
-import { SystemExplorer } from '@/components/system'
-import { SystemDesktopToc } from '@/components/system/toc'
 import { dataIndex } from '@/data'
 import { Link } from '@/ui/link'
+import { SystemExplorer } from '@/components/system'
+import { SystemDesktopToc } from '@/components/system/toc'
 
 export const Route = createFileRoute('/systems/$slug')({
   loader: ({ params }) => {

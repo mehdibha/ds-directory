@@ -1,0 +1,94 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "semi": false,
+  "singleQuote": true,
+  "trailingComma": "all",
+  "printWidth": 80,
+  "sortPackageJson": false,
+  "sortImports": {
+    "newlinesBetween": false,
+    "customGroups": [
+      {
+        "groupName": "react-libs",
+        "elementNamePattern": [
+          "react",
+          "react/**",
+          "react-dom",
+          "react-dom/**",
+        ],
+      },
+      {
+        "groupName": "tanstack-libs",
+        "elementNamePattern": ["@tanstack/**"],
+      },
+      // Layered internal imports (shadcn-style): low-level → high-level.
+      {
+        "groupName": "internal-config",
+        "elementNamePattern": ["@/config", "@/config/**"],
+      },
+      {
+        "groupName": "internal-lib",
+        "elementNamePattern": ["@/lib", "@/lib/**"],
+      },
+      {
+        "groupName": "internal-hooks",
+        "elementNamePattern": ["@/hooks", "@/hooks/**"],
+      },
+      {
+        "groupName": "internal-data",
+        "elementNamePattern": ["@/data", "@/data/**"],
+      },
+      {
+        "groupName": "internal-ui",
+        "elementNamePattern": ["@/ui", "@/ui/**"],
+      },
+      {
+        "groupName": "internal-components",
+        "elementNamePattern": ["@/components", "@/components/**"],
+      },
+    ],
+    "groups": [
+      ["side_effect", "side_effect_style"],
+      { "newlinesBetween": true },
+      "react-libs",
+      "tanstack-libs",
+      "builtin",
+      "external",
+      { "newlinesBetween": true },
+      "internal-config",
+      "internal-lib",
+      "internal-hooks",
+      "internal-data",
+      "internal-ui",
+      "internal-components",
+      "internal",
+      { "newlinesBetween": true },
+      ["parent", "sibling", "index"],
+      "style",
+      "unknown",
+    ],
+  },
+  "sortTailwindcss": {
+    "stylesheet": "src/styles.css",
+    "attributes": ["classList"],
+    "functions": ["cn", "tv", "createStyles"],
+  },
+  "ignorePatterns": [
+    "**/node_modules/**",
+    "**/.pnpm-store/**",
+    "**/.cache/**",
+    "**/dist/**",
+    "**/build/**",
+    "**/.turbo/**",
+    "**/.nitro/**",
+    "**/.output/**",
+    "**/.source/**",
+    "src/routeTree.gen.ts",
+    "**/__generated__/**",
+    // Vendored data-pipeline snapshots: raw upstream files, hash-pinned in each
+    // manifest.json — reformatting them breaks snapshot verification.
+    "sources/**",
+    // Extractor-owned data artifacts (byte-deterministic from the pipeline).
+    "systems/*/colors.json",
+  ],
+}

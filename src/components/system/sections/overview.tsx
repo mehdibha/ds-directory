@@ -1,5 +1,5 @@
-import { SystemOverview } from '@/components/explorer/system-overview'
 import type { CatalogEntry, SystemWithColors } from '@/data/schema'
+import { SystemOverview } from '@/components/explorer/system-overview'
 
 import { Section } from '../primitives'
 

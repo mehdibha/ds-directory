@@ -1,0 +1,45 @@
+# Dependencies
+node_modules
+.pnpm-store
+.pnp
+.pnp.js
+
+# Build outputs
+dist
+dist-ssr
+build
+.output
+.cache
+
+# Frameworks & tools
+.tanstack
+.nitro
+.wrangler
+.turbo
+.source
+.vite
+
+# Testing
+coverage
+
+# Environment
+.env
+.env*.local
+*.local
+
+# Logs
+*.log
+.pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Security
+*.pem
+
+# Vercel
+.vercel
+
+# Generated ds data index — emitted by `pnpm build:data`.
+src/data/__generated__/
