@@ -80,9 +80,12 @@ const NOTES: Record<string, string> = {
     'One page covering checkboxes, radios, and switches — Bootstrap ships them as one control family.',
   Collapse:
     'Low-level disclosure plugin; the Accordion component is built on top of it.',
-  'Close button': 'Bootstrap-specific dismiss affordance shared by alerts, modals, offcanvas, and toasts.',
-  Scrollspy: 'Scroll-position plugin that updates nav state; no cross-system equivalent.',
-  'Input group': 'Composition wrapper that prepends/appends addons to form controls.',
+  'Close button':
+    'Bootstrap-specific dismiss affordance shared by alerts, modals, offcanvas, and toasts.',
+  Scrollspy:
+    'Scroll-position plugin that updates nav state; no cross-system equivalent.',
+  'Input group':
+    'Composition wrapper that prepends/appends addons to form controls.',
   'Floating labels': 'Label-in-field variant of Bootstrap form controls.',
 }
 
@@ -98,7 +101,9 @@ function slugify(title: string): string {
 /** Minimal reader for the shape sidebar.yml actually uses: top-level entries
     `- title: X` with a nested `pages:` list of `    - title: Y`. No YAML
     dependency — the file is a flat two-level list. */
-export function parseSidebar(yaml: string): { section: string; page: string }[] {
+export function parseSidebar(
+  yaml: string,
+): { section: string; page: string }[] {
   const out: { section: string; page: string }[] = []
   let section: string | null = null
   for (const raw of yaml.split('\n')) {
@@ -207,7 +212,10 @@ function extractComponents(sourcesDir: string): ComponentsFile {
       component: map[page] ?? null,
       name: page,
       docsUrl: `${DOCS_BASE}/${slugify(section)}/${slugify(page)}/`,
-      demo: page === 'Buttons' ? { html: buttonDemo(pkg.version), height: 130 } : null,
+      demo:
+        page === 'Buttons'
+          ? { html: buttonDemo(pkg.version), height: 130 }
+          : null,
       note: NOTES[page] ?? null,
     })
   }
@@ -236,8 +244,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
           snapshot: null,
         },
       ],
-      notes:
-        `Inventory read from site/data/sidebar.yml at v${pkg.version} (the docs site's own page index); docs URLs derived by the same title slugification the site uses. Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads Bootstrap's published bootstrap.min.css from jsDelivr at the same pinned version with its published SRI hash — a version-pinned URL, not a live fetch. The demo switches color mode via Bootstrap's own data-bs-theme root attribute, which that same stylesheet defines: an explicit ?mode= in its URL is applied once as a standalone override, otherwise it mirrors the embedding parent document's <html class="dark"> live through a MutationObserver.`,
+      notes: `Inventory read from site/data/sidebar.yml at v${pkg.version} (the docs site's own page index); docs URLs derived by the same title slugification the site uses. Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads Bootstrap's published bootstrap.min.css from jsDelivr at the same pinned version with its published SRI hash — a version-pinned URL, not a live fetch. The demo switches color mode via Bootstrap's own data-bs-theme root attribute, which that same stylesheet defines: an explicit ?mode= in its URL is applied once as a standalone override, otherwise it mirrors the embedding parent document's <html class="dark"> live through a MutationObserver.`,
     }),
   }
 }

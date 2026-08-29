@@ -3,6 +3,7 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 
 import { dataIndex, getComponentExamples } from '@/data'
 import { SearchField } from '@/ui/search-field'
+import { componentIllustrations } from '@/components/illustrations'
 
 export const Route = createFileRoute('/components/')({
   component: ComponentsIndex,
@@ -40,8 +41,8 @@ function ComponentsIndex() {
           Components, across systems.
         </h1>
         <p className="mt-4 max-w-xl text-base text-balance text-fg-muted">
-          The same component, as every design system ships it — live, from
-          each system&apos;s real published code.
+          The same component, as every design system ships it — live, from each
+          system&apos;s real published code.
         </p>
         <p className="mt-8 font-mono text-xs text-fg-muted">
           {components.length} components · {totalExamples} examples across
@@ -56,7 +57,7 @@ function ComponentsIndex() {
           value={query}
           onChange={setQuery}
         />
-        <ul className="mt-4 divide-y divide-border">
+        <ul className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3">
           {filtered.map(({ def, examples }) => {
             const hasExamples = examples.length > 0
             return (
@@ -64,26 +65,34 @@ function ComponentsIndex() {
                 <Link
                   to="/components/$slug"
                   params={{ slug: def.slug }}
-                  className="group flex items-baseline gap-3 py-4"
+                  className="group block"
                   disabled={!hasExamples}
                 >
-                  <span
+                  <div
                     className={
                       hasExamples
-                        ? 'font-medium group-hover:underline'
-                        : 'font-medium text-fg-disabled'
+                        ? 'overflow-hidden rounded-xl border bg-field transition-colors group-hover:bg-muted/60'
+                        : 'overflow-hidden rounded-xl border border-disabled bg-field opacity-50'
                     }
                   >
-                    {def.name}
-                  </span>
-                  {def.aliases.length > 0 && (
-                    <span className="hidden truncate text-xs text-fg-muted sm:inline">
-                      {def.aliases.join(' · ')}
+                    {componentIllustrations[def.slug] ?? (
+                      <div className="aspect-[5/3]" />
+                    )}
+                  </div>
+                  <div className="mt-2.5 flex items-baseline justify-between gap-2 px-0.5">
+                    <span
+                      className={
+                        hasExamples
+                          ? 'truncate text-sm font-medium'
+                          : 'truncate text-sm font-medium text-fg-disabled'
+                      }
+                    >
+                      {def.name}
                     </span>
-                  )}
-                  <span className="ml-auto shrink-0 font-mono text-xs text-fg-muted">
-                    {hasExamples ? `${examples.length} examples` : 'planned'}
-                  </span>
+                    <span className="shrink-0 font-mono text-xs text-fg-muted">
+                      {hasExamples ? examples.length : 'planned'}
+                    </span>
+                  </div>
                 </Link>
               </li>
             )

@@ -57,23 +57,31 @@ function RootDocument() {
               header-height of scroll. */}
           <ProgressiveBlur className="header-blur-reveal" />
           <div className="mx-auto flex w-full max-w-4xl items-center justify-between px-6 py-3.5">
-            <div className="flex items-center gap-3">
-              <Link to="/" className="flex items-baseline gap-3">
+            <div className="flex items-center gap-4">
+              <Link to="/" className="flex items-baseline">
                 <span className="text-lg font-semibold tracking-tight">
-                  ds.<span className="text-fg-muted">directory</span>
+                  ds.
                 </span>
               </Link>
+              <nav className="flex items-center gap-1 text-sm text-fg-muted">
+                <Link
+                  to="/design-systems"
+                  className="px-2 py-1 hover:text-fg [&.active]:text-fg"
+                >
+                  Design systems
+                </Link>
+                <Link
+                  to="/components"
+                  className="px-2 py-1 hover:text-fg [&.active]:text-fg"
+                >
+                  Components
+                </Link>
+              </nav>
               {/* Small screens have no in-page lines TOC (that's lg+); surface
                   the sections here next to the logo instead. Null off system pages. */}
               <SystemTocSelect className="lg:hidden" />
             </div>
             <nav className="flex items-center gap-1 text-sm text-fg-muted">
-              <Link
-                to="/components"
-                className="px-2 py-1 hover:text-fg [&.active]:text-fg"
-              >
-                Components
-              </Link>
               <LinkButton
                 href="https://github.com/mehdibha/ds-directory"
                 aria-label="GitHub"

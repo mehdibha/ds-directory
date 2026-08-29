@@ -18,7 +18,7 @@ function ComponentPage() {
   const linkOnly = examples.filter((example) => example.demoSrc === null)
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6">
+    <div className="mx-auto w-full max-w-4xl px-6">
       <header className="pt-10">
         <p className="font-mono text-xs tracking-wider text-fg-muted uppercase">
           <RouterLink to="/components" className="hover:underline">
@@ -42,7 +42,7 @@ function ComponentPage() {
         </p>
       </header>
 
-      <section className="grid grid-cols-1 gap-4 pt-8 pb-24 sm:grid-cols-2 lg:grid-cols-3">
+      <section className="grid grid-cols-1 gap-4 pt-8 pb-24 sm:grid-cols-2">
         {live.map((example) => (
           <ExampleCard key={example.system.slug} example={example} />
         ))}

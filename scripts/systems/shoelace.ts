@@ -99,7 +99,9 @@ const ACRONYMS: Record<string, string> = { qr: 'QR' }
 function titleCase(dir: string): string {
   return dir
     .split('-')
-    .map((word) => ACRONYMS[word] ?? word.charAt(0).toUpperCase() + word.slice(1))
+    .map(
+      (word) => ACRONYMS[word] ?? word.charAt(0).toUpperCase() + word.slice(1),
+    )
     .join(' ')
 }
 

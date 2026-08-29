@@ -6,7 +6,13 @@
     {
       "slug": "accordion",
       "name": "Accordion",
-      "aliases": ["Collapse", "Collapsible", "Disclosure", "Expander", "Details"],
+      "aliases": [
+        "Collapse",
+        "Collapsible",
+        "Disclosure",
+        "Expander",
+        "Details"
+      ],
       "description": "A stack of headings that expand and collapse to reveal or hide the content beneath each one."
     },
     {

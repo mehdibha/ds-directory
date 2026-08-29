@@ -43,7 +43,10 @@ for (const dir of systemDirs) {
     if (!component.demo) continue
     fs.mkdirSync(outDir, { recursive: true })
     fs.writeFileSync(
-      path.join(outDir, `${demoBasename(component.component, component.name)}.html`),
+      path.join(
+        outDir,
+        `${demoBasename(component.component, component.name)}.html`,
+      ),
       component.demo.html,
     )
     written++

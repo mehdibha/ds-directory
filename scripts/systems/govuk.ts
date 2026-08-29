@@ -175,9 +175,7 @@ function readSourceDirs(sourcesDir: string): Set<string> {
   const raw = JSON.parse(
     fs.readFileSync(path.join(sourcesDir, 'components-tree.json'), 'utf8'),
   ) as { tree: TreeEntry[] }
-  return new Set(
-    raw.tree.filter((e) => e.type === 'tree').map((e) => e.path),
-  )
+  return new Set(raw.tree.filter((e) => e.type === 'tree').map((e) => e.path))
 }
 
 /** Documented component slugs, from the docs sitemap. The bare
@@ -197,9 +195,10 @@ function readDocumentedSlugs(sourcesDir: string): string[] {
 
 function titleCase(slug: string): string {
   const words = slug.split('-')
-  return [words[0]!.charAt(0).toUpperCase() + words[0]!.slice(1), ...words.slice(1)].join(
-    ' ',
-  )
+  return [
+    words[0]!.charAt(0).toUpperCase() + words[0]!.slice(1),
+    ...words.slice(1),
+  ].join(' ')
 }
 
 // ── extract ─────────────────────────────────────────────────────────────────

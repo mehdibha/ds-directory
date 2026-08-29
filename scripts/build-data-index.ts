@@ -36,9 +36,8 @@ if (!catalogResult.success) {
 }
 
 const componentsCatalogRaw = readJson(path.join(dataDir, 'components.json'))
-const componentsCatalogResult = componentsCatalogSchema.safeParse(
-  componentsCatalogRaw,
-)
+const componentsCatalogResult =
+  componentsCatalogSchema.safeParse(componentsCatalogRaw)
 if (!componentsCatalogResult.success) {
   errors.push(`data/components.json: ${componentsCatalogResult.error.message}`)
 }

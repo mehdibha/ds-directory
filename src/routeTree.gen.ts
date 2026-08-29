@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as DesignSystemsRouteImport } from './routes/design-systems'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ComponentsIndexRouteImport } from './routes/components.index'
 import { Route as SystemsSlugRouteImport } from './routes/systems.$slug'
 import { Route as ComponentsSlugRouteImport } from './routes/components.$slug'
 
+const DesignSystemsRoute = DesignSystemsRouteImport.update({
+  id: '/design-systems',
+  path: '/design-systems',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -37,12 +43,14 @@ const ComponentsSlugRoute = ComponentsSlugRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/design-systems': typeof DesignSystemsRoute
   '/components/$slug': typeof ComponentsSlugRoute
   '/systems/$slug': typeof SystemsSlugRoute
   '/components/': typeof ComponentsIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/design-systems': typeof DesignSystemsRoute
   '/components/$slug': typeof ComponentsSlugRoute
   '/systems/$slug': typeof SystemsSlugRoute
   '/components': typeof ComponentsIndexRoute
@@ -50,20 +58,38 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/design-systems': typeof DesignSystemsRoute
   '/components/$slug': typeof ComponentsSlugRoute
   '/systems/$slug': typeof SystemsSlugRoute
   '/components/': typeof ComponentsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/components/$slug' | '/systems/$slug' | '/components/'
+  fullPaths:
+    | '/'
+    | '/design-systems'
+    | '/components/$slug'
+    | '/systems/$slug'
+    | '/components/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/components/$slug' | '/systems/$slug' | '/components'
-  id: '__root__' | '/' | '/components/$slug' | '/systems/$slug' | '/components/'
+  to:
+    | '/'
+    | '/design-systems'
+    | '/components/$slug'
+    | '/systems/$slug'
+    | '/components'
+  id:
+    | '__root__'
+    | '/'
+    | '/design-systems'
+    | '/components/$slug'
+    | '/systems/$slug'
+    | '/components/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  DesignSystemsRoute: typeof DesignSystemsRoute
   ComponentsSlugRoute: typeof ComponentsSlugRoute
   SystemsSlugRoute: typeof SystemsSlugRoute
   ComponentsIndexRoute: typeof ComponentsIndexRoute
@@ -71,6 +97,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/design-systems': {
+      id: '/design-systems'
+      path: '/design-systems'
+      fullPath: '/design-systems'
+      preLoaderRoute: typeof DesignSystemsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -104,6 +137,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  DesignSystemsRoute: DesignSystemsRoute,
   ComponentsSlugRoute: ComponentsSlugRoute,
   SystemsSlugRoute: SystemsSlugRoute,
   ComponentsIndexRoute: ComponentsIndexRoute,
