@@ -1,71 +1,20 @@
-import { useMemo, useState } from 'react'
-import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
-import { ListFilterIcon } from 'lucide-react'
-import type { Selection } from 'react-aria-components/Menu'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { ArrowRightIcon } from 'lucide-react'
 
-import { dataIndex } from '@/data'
-import type { CatalogEntry } from '@/data/schema'
-import { Badge } from '@/ui/badge'
-import { Button } from '@/ui/button'
-import {
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuSection,
-  MenuSectionHeader,
-} from '@/ui/menu'
-import { Popover } from '@/ui/popover'
-import { SearchField } from '@/ui/search-field'
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableColumn,
-  TableContainer,
-  TableHeader,
-  TableRow,
-} from '@/ui/table'
+import { dataIndex, getComponentExamples } from '@/data'
 
 export const Route = createFileRoute('/')({
   component: Home,
 })
 
-const systemsBySlug = new Map(
-  dataIndex.systems.map((system) => [system.slug, system]),
+const systemsBySlug = new Set(dataIndex.systems.map((system) => system.slug))
+const explorable = dataIndex.catalog.filter((entry) =>
+  systemsBySlug.has(entry.slug),
 )
 
-// Explorable systems first, then the rest alphabetically.
-const catalog = [...dataIndex.catalog].sort((a, b) => {
-  const aExplorable = systemsBySlug.has(a.slug) ? 1 : 0
-  const bExplorable = systemsBySlug.has(b.slug) ? 1 : 0
-  if (aExplorable !== bExplorable) return bExplorable - aExplorable
-  return a.name.localeCompare(b.name)
-})
-
-const explorable = catalog.filter((entry) => systemsBySlug.has(entry.slug))
-
-// Systems without an exploration page yet — disabled in the table.
-const plannedKeys = catalog
-  .filter((entry) => !systemsBySlug.has(entry.slug))
-  .map((entry) => entry.slug)
-
-const categoryLabels: Record<CatalogEntry['category'], string> = {
-  'big-tech': 'Big tech',
-  saas: 'SaaS',
-  'fintech-devtools': 'Fintech & devtools',
-  'oss-libraries': 'OSS libraries',
-  government: 'Government',
-  'consumer-media': 'Consumer & media',
-  international: 'International',
-  'primitives-tokens': 'Primitives & tokens',
-}
-
-const categoryOptions = [
-  { id: 'all', label: 'All categories' },
-  ...(
-    Object.entries(categoryLabels) as [CatalogEntry['category'], string][]
-  ).map(([id, label]) => ({ id, label })),
-]
+const componentsWithExamples = dataIndex.componentsCatalog.filter(
+  (def) => getComponentExamples(def.slug).length > 0,
+)
 
 function Home() {
   return (
@@ -75,167 +24,46 @@ function Home() {
           The design system directory.
         </h1>
         <p className="mt-4 max-w-xl text-base text-balance text-fg-muted">
-          Explore the systems worth learning from — their color ramps, tokens,
-          and the conventions that hold them together.
-        </p>
-        <p className="mt-8 font-mono text-xs text-fg-muted">
-          {catalog.length} systems · {explorable.length} explorable
+          How the best design systems are built — their color ramps, tokens,
+          components, and the conventions that hold them together.
         </p>
       </section>
 
-      <Directory />
+      <section className="grid grid-cols-1 gap-4 pb-24 sm:grid-cols-2">
+        <Link
+          to="/design-systems"
+          className="group rounded-xl border p-6 transition-colors hover:bg-field"
+        >
+          <h2 className="flex items-center gap-2 font-medium">
+            Design systems
+            <ArrowRightIcon className="size-4 text-fg-muted transition-transform group-hover:translate-x-0.5" />
+          </h2>
+          <p className="mt-2 text-sm text-fg-muted">
+            The systems worth learning from, documented from their real
+            published sources.
+          </p>
+          <p className="mt-4 font-mono text-xs text-fg-muted">
+            {dataIndex.catalog.length} systems · {explorable.length} explorable
+          </p>
+        </Link>
+        <Link
+          to="/components"
+          className="group rounded-xl border p-6 transition-colors hover:bg-field"
+        >
+          <h2 className="flex items-center gap-2 font-medium">
+            Components
+            <ArrowRightIcon className="size-4 text-fg-muted transition-transform group-hover:translate-x-0.5" />
+          </h2>
+          <p className="mt-2 text-sm text-fg-muted">
+            The same component, as every design system ships it — live, from
+            each system&apos;s real published code.
+          </p>
+          <p className="mt-4 font-mono text-xs text-fg-muted">
+            {dataIndex.componentsCatalog.length} components ·{' '}
+            {componentsWithExamples.length} with live examples
+          </p>
+        </Link>
+      </section>
     </div>
-  )
-}
-
-function Directory() {
-  const navigate = useNavigate()
-  const [query, setQuery] = useState('')
-  const [category, setCategory] = useState('all')
-
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase()
-    return catalog.filter((entry) => {
-      if (category !== 'all' && entry.category !== category) return false
-      if (q && !`${entry.name} ${entry.org}`.toLowerCase().includes(q)) {
-        return false
-      }
-      return true
-    })
-  }, [query, category])
-
-  const activeFilters = category !== 'all' ? 1 : 0
-
-  // Single-select over `category:${value}` keys: keep the new pick, drop the old.
-  const pickCategory = (keys: Selection) => {
-    if (keys === 'all') return
-    const active = `category:${category}`
-    const next = [...keys].map(String).find((key) => key !== active)
-    if (next) setCategory(next.slice('category:'.length))
-  }
-
-  return (
-    <section className="pb-24">
-      <div className="flex items-center gap-3 pt-6">
-        <SearchField
-          aria-label="Search systems"
-          placeholder="Search systems…"
-          value={query}
-          onChange={setQuery}
-          className="flex-1"
-        />
-        <Menu>
-          <Button aria-label="Filters" size="md" isIconOnly>
-            <ListFilterIcon />
-            {activeFilters > 0 && (
-              <span className="absolute -top-1 -right-1 size-2 rounded-full bg-accent" />
-            )}
-          </Button>
-          <Popover placement="bottom end">
-            <MenuContent className="min-w-52">
-              <MenuSection
-                selectionMode="multiple"
-                disallowEmptySelection
-                selectedKeys={new Set([`category:${category}`])}
-                onSelectionChange={pickCategory}
-              >
-                <MenuSectionHeader>Category</MenuSectionHeader>
-                {categoryOptions.map((option) => (
-                  <MenuItem key={option.id} id={`category:${option.id}`}>
-                    {option.label}
-                  </MenuItem>
-                ))}
-              </MenuSection>
-            </MenuContent>
-          </Popover>
-        </Menu>
-      </div>
-
-      <div className="mt-4">
-        <TableContainer className="rounded-none border-0 bg-transparent">
-          <Table
-            aria-label="Design systems"
-            className="[&_[data-slot=table-cell]]:h-16 [&_[data-slot=table-cell]]:px-0 [&_[data-slot=table-column]]:h-11 [&_[data-slot=table-column]]:px-0"
-            disabledKeys={plannedKeys}
-            onRowAction={(key) =>
-              navigate({ to: '/systems/$slug', params: { slug: String(key) } })
-            }
-          >
-            <TableHeader>
-              <TableColumn className="w-10">#</TableColumn>
-              <TableColumn isRowHeader>System</TableColumn>
-              <TableColumn className="text-right">Category</TableColumn>
-            </TableHeader>
-            <TableBody
-              renderEmptyState={() => 'No systems match your filters.'}
-            >
-              {filtered.map((entry, index) => {
-                const isExplorable = systemsBySlug.has(entry.slug)
-                return (
-                  <TableRow
-                    key={entry.slug}
-                    id={entry.slug}
-                    className={isExplorable ? undefined : 'border-disabled'}
-                  >
-                    <TableCell
-                      className={
-                        isExplorable
-                          ? 'font-mono text-xs text-fg-muted'
-                          : 'font-mono text-xs text-fg-disabled'
-                      }
-                    >
-                      {index + 1}
-                    </TableCell>
-                    <TableCell>
-                      <span className="flex items-baseline gap-2">
-                        {isExplorable ? (
-                          <Link
-                            to="/systems/$slug"
-                            params={{ slug: entry.slug }}
-                            className="font-medium"
-                          >
-                            {entry.name}
-                          </Link>
-                        ) : (
-                          <span className="font-medium text-fg-disabled">
-                            {entry.name}
-                          </span>
-                        )}
-                        <span
-                          className={
-                            isExplorable
-                              ? 'text-xs text-fg-muted'
-                              : 'text-xs text-fg-disabled'
-                          }
-                        >
-                          by {entry.org}
-                        </span>
-                        {!isExplorable && (
-                          <Badge
-                            size="sm"
-                            className="bg-disabled text-fg-disabled"
-                          >
-                            planned
-                          </Badge>
-                        )}
-                      </span>
-                    </TableCell>
-                    <TableCell
-                      className={
-                        isExplorable
-                          ? 'text-right text-xs text-fg-muted'
-                          : 'text-right text-xs text-fg-disabled'
-                      }
-                    >
-                      {categoryLabels[entry.category]}
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </TableContainer>
-      </div>
-    </section>
   )
 }

@@ -5,7 +5,12 @@
 //   - live-site: a mismatch means the upstream stylesheet moved → report
 //     "source changed, review the diff" and exit 0 (the snapshot is expected
 //     to be re-run deliberately).
-import type { ColorsFile } from '../../src/data/schema'
+import type { Provenance } from '../../src/data/schema'
+
+/** Any emitted data file: drift only needs provenance to pick the tier. */
+interface DataFile {
+  provenance: Provenance
+}
 
 /** A minimal path-addressed deep diff, enough to point at what moved. */
 export function diff(
@@ -53,10 +58,10 @@ export interface DriftResult {
 }
 
 export function evaluateDrift(
-  committed: ColorsFile,
-  fresh: ColorsFile,
+  committed: DataFile,
+  fresh: DataFile,
 ): DriftResult {
-  const diffs = diff(committed, fresh, 'colors')
+  const diffs = diff(committed, fresh, 'data')
   const changed = diffs.length > 0
   // The strongest source tier decides how a mismatch is treated.
   const tiers = new Set(committed.provenance.sources.map((s) => s.kind))
