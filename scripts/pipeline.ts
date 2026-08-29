@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 
-import { colorsFileSchema } from '../src/data/schema'
+import { colorsFileSchema, componentsFileSchema } from '../src/data/schema'
 import { evaluateDrift } from './lib/drift'
 import { snapshot, verifySnapshot } from './lib/snapshot'
 import type { SystemConfig } from './lib/system'
@@ -41,6 +41,38 @@ function colorsPathFor(slug: string): string {
   return path.join(systemsDataRoot, slug, 'colors.json')
 }
 
+function componentsPathFor(slug: string): string {
+  return path.join(systemsDataRoot, slug, 'components.json')
+}
+
+// One data axis a config can produce: its extractor, output path, and schema.
+// Extraction and drift iterate these so both axes follow identical rules.
+function artifactsFor(config: SystemConfig) {
+  const artifacts = []
+  if (config.extract) {
+    artifacts.push({
+      label: 'colors',
+      out: colorsPathFor(config.slug),
+      schema: colorsFileSchema,
+      run: config.extract,
+    })
+  }
+  if (config.extractComponents) {
+    artifacts.push({
+      label: 'components',
+      out: componentsPathFor(config.slug),
+      schema: componentsFileSchema,
+      run: config.extractComponents,
+    })
+  }
+  if (artifacts.length === 0) {
+    throw new Error(
+      `config "${config.slug}" declares no extractor (extract / extractComponents)`,
+    )
+  }
+  return artifacts
+}
+
 function stableJson(value: unknown): string {
   return `${JSON.stringify(value, null, 2)}\n`
 }
@@ -66,38 +98,46 @@ async function runExtract(config: SystemConfig): Promise<void> {
       `snapshot for "${config.slug}" fails manifest verification (hand-edited?): ${bad.join(', ')}`,
     )
   }
-  const colors = config.extract(dir)
-  // Validate before writing so a broken extractor never lands a bad file.
-  const parsed = colorsFileSchema.parse(colors)
-  const out = colorsPathFor(config.slug)
-  fs.mkdirSync(path.dirname(out), { recursive: true })
-  fs.writeFileSync(out, stableJson(parsed))
-  console.log(`[extract] ${config.slug}: → ${path.relative(root, out)}`)
+  for (const artifact of artifactsFor(config)) {
+    // Validate before writing so a broken extractor never lands a bad file.
+    const parsed = artifact.schema.parse(artifact.run(dir))
+    fs.mkdirSync(path.dirname(artifact.out), { recursive: true })
+    fs.writeFileSync(artifact.out, stableJson(parsed))
+    console.log(
+      `[extract] ${config.slug}: → ${path.relative(root, artifact.out)}`,
+    )
+  }
 }
 
 async function runDrift(config: SystemConfig): Promise<number> {
-  const out = colorsPathFor(config.slug)
-  if (!fs.existsSync(out)) {
-    console.error(
-      `[drift] ${config.slug}: no committed colors.json — run extract first`,
-    )
-    return 1
-  }
-  const committed = colorsFileSchema.parse(
-    JSON.parse(fs.readFileSync(out, 'utf8')),
-  )
   const dir = sourcesDirFor(config.slug)
-  const fresh = colorsFileSchema.parse(config.extract(dir))
-  const result = evaluateDrift(committed, fresh)
-  const tag = result.changed ? '✗' : '✓'
-  console.log(`[drift] ${tag} ${config.slug}: ${result.message}`)
-  if (result.changed) {
-    for (const line of result.diffs.slice(0, 100)) console.log(`    ${line}`)
-    if (result.diffs.length > 100) {
-      console.log(`    … and ${result.diffs.length - 100} more`)
+  let exitCode = 0
+  for (const artifact of artifactsFor(config)) {
+    if (!fs.existsSync(artifact.out)) {
+      console.error(
+        `[drift] ${config.slug}: no committed ${artifact.label}.json — run extract first`,
+      )
+      exitCode = Math.max(exitCode, 1)
+      continue
     }
+    const committed = artifact.schema.parse(
+      JSON.parse(fs.readFileSync(artifact.out, 'utf8')),
+    )
+    const fresh = artifact.schema.parse(artifact.run(dir))
+    const result = evaluateDrift(committed, fresh)
+    const tag = result.changed ? '✗' : '✓'
+    console.log(
+      `[drift] ${tag} ${config.slug} (${artifact.label}): ${result.message}`,
+    )
+    if (result.changed) {
+      for (const line of result.diffs.slice(0, 100)) console.log(`    ${line}`)
+      if (result.diffs.length > 100) {
+        console.log(`    … and ${result.diffs.length - 100} more`)
+      }
+    }
+    exitCode = Math.max(exitCode, result.exitCode)
   }
-  return result.exitCode
+  return exitCode
 }
 
 async function main() {

@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ds-directory",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["dev", "--port", "4446"],
+      "port": 4446
+    }
+  ]
+}

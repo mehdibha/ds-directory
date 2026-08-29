@@ -215,6 +215,51 @@ export const colorsFileSchema = z.object({
   provenance: provenanceSchema,
 })
 
+/** Canonical component taxonomy entry — data/components.json. Editorial
+    (naming, aliases, description) like catalog.json, never extracted.
+    Additive — 2026-08-29. */
+export const componentDefSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]+$/),
+  name: z.string().min(1),
+  aliases: z.array(z.string().min(1)).default([]),
+  description: z.string().min(1),
+})
+
+export const componentsCatalogSchema = z.object({
+  $comment: z.string().optional(),
+  version: z.number().int(),
+  createdAt: isoDate,
+  components: z.array(componentDefSchema).min(1),
+})
+
+/** Live demo of one component: a complete standalone HTML document that loads
+    the system's real published package from pinned CDN URLs. Emitted by
+    extractors; scripts/build-demos.ts materializes it under public/demos/.
+    Additive — 2026-08-29. */
+export const componentDemoSchema = z.object({
+  html: z.string().min(1),
+  /** iframe height in px — systems whose components render larger need more. */
+  height: z.number().int().min(60).max(600),
+})
+
+/** One component as the system ships it. Additive — 2026-08-29. */
+export const systemComponentSchema = z.object({
+  /** Canonical slug in data/components.json; null when the system's component
+      has no cross-system equivalent (yet). */
+  component: z.string().nullable(),
+  /** The system's own name for it. */
+  name: z.string().min(1),
+  docsUrl: z.url().nullable(),
+  demo: componentDemoSchema.nullable().default(null),
+  note: z.string().nullable().default(null),
+})
+
+export const componentsFileSchema = z.object({
+  components: z.array(systemComponentSchema).min(1),
+  sources: z.array(z.url()).min(1),
+  provenance: provenanceSchema,
+})
+
 export const catalogCategorySchema = z.enum([
   'big-tech',
   'saas',
@@ -286,19 +331,26 @@ export type Provenance = z.infer<typeof provenanceSchema>
 export type DerivedColor = z.infer<typeof derivedColorSchema>
 export type DerivedColors = z.infer<typeof derivedColorsSchema>
 export type ColorsFile = z.infer<typeof colorsFileSchema>
+export type ComponentDef = z.infer<typeof componentDefSchema>
+export type ComponentDemo = z.infer<typeof componentDemoSchema>
+export type SystemComponent = z.infer<typeof systemComponentSchema>
+export type ComponentsFile = z.infer<typeof componentsFileSchema>
 export type CatalogEntry = z.infer<typeof catalogEntrySchema>
 
 export interface SystemWithColors extends System {
   colors: ColorsFile
 }
 
-/** A researched system; `colors` is present once its color data has been added. */
+/** A researched system; each data axis is present once extracted — a system
+    can be component-explorable before it is color-explorable, and vice versa. */
 export interface SystemEntry extends System {
   colors?: ColorsFile
+  components?: ComponentsFile
 }
 
 /** Shape of the generated `src/data/__generated__/index.json`. */
 export interface DataIndex {
   catalog: CatalogEntry[]
+  componentsCatalog: ComponentDef[]
   systems: SystemEntry[]
 }

@@ -43,3 +43,6 @@ Thumbs.db
 
 # Generated ds data index — emitted by `pnpm build:data`.
 src/data/__generated__/
+
+# Generated demo pages — emitted by `pnpm build:data` from systems/*/components.json.
+public/demos/

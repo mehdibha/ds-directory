@@ -68,6 +68,12 @@ function RootDocument() {
               <SystemTocSelect className="lg:hidden" />
             </div>
             <nav className="flex items-center gap-1 text-sm text-fg-muted">
+              <Link
+                to="/components"
+                className="px-2 py-1 hover:text-fg [&.active]:text-fg"
+              >
+                Components
+              </Link>
               <LinkButton
                 href="https://github.com/mehdibha/ds-directory"
                 aria-label="GitHub"

@@ -7,6 +7,8 @@ import path from 'node:path'
 import {
   catalogSchema,
   colorsFileSchema,
+  componentsCatalogSchema,
+  componentsFileSchema,
   systemSchema,
 } from '../src/data/schema'
 import type { DataIndex, SystemEntry } from '../src/data/schema'
@@ -32,6 +34,19 @@ const catalogResult = catalogSchema.safeParse(catalogRaw)
 if (!catalogResult.success) {
   errors.push(`data/catalog.json: ${catalogResult.error.message}`)
 }
+
+const componentsCatalogRaw = readJson(path.join(dataDir, 'components.json'))
+const componentsCatalogResult = componentsCatalogSchema.safeParse(
+  componentsCatalogRaw,
+)
+if (!componentsCatalogResult.success) {
+  errors.push(`data/components.json: ${componentsCatalogResult.error.message}`)
+}
+const canonicalComponents = new Set(
+  componentsCatalogResult.success
+    ? componentsCatalogResult.data.components.map((c) => c.slug)
+    : [],
+)
 
 const systemsDir = path.join(root, 'systems')
 const systemDirs = fs.existsSync(systemsDir)
@@ -59,11 +74,37 @@ for (const dir of systemDirs) {
     )
   }
 
+  const entry: SystemEntry = { ...systemResult.data }
+
+  // Components data is optional and independent of colors — a system can be
+  // component-explorable before it is color-explorable, and vice versa.
+  const componentsPath = path.join(systemsDir, dir, 'components.json')
+  if (fs.existsSync(componentsPath)) {
+    const componentsResult = componentsFileSchema.safeParse(
+      readJson(componentsPath),
+    )
+    if (!componentsResult.success) {
+      errors.push(`${rel}/components.json: ${componentsResult.error.message}`)
+    } else {
+      for (const component of componentsResult.data.components) {
+        if (
+          component.component !== null &&
+          !canonicalComponents.has(component.component)
+        ) {
+          errors.push(
+            `${rel}/components.json: "${component.name}" maps to unknown canonical component "${component.component}"`,
+          )
+        }
+      }
+      entry.components = componentsResult.data
+    }
+  }
+
   // Color data is optional — a system can be explorable before its ramps and
   // tokens have been researched.
   const colorsPath = path.join(systemsDir, dir, 'colors.json')
   if (!fs.existsSync(colorsPath)) {
-    systems.push(systemResult.data)
+    systems.push(entry)
     continue
   }
 
@@ -104,7 +145,7 @@ for (const dir of systemDirs) {
     }
   }
 
-  systems.push({ ...systemResult.data, colors })
+  systems.push({ ...entry, colors })
 }
 
 if (errors.length > 0) {
@@ -116,6 +157,9 @@ if (errors.length > 0) {
 if (!checkOnly) {
   const index: DataIndex = {
     catalog: catalogResult.success ? catalogResult.data.systems : [],
+    componentsCatalog: componentsCatalogResult.success
+      ? componentsCatalogResult.data.components
+      : [],
     systems,
   }
   fs.mkdirSync(path.dirname(outFile), { recursive: true })
