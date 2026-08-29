@@ -132,13 +132,19 @@ function cleanLabel(label: string): string {
 /** A complete standalone document loading Pico's real published stylesheet at a
     pinned version, with the sample centered in a horizontal flex row.
 
-    Color mode comes from the `mode` query parameter: `?mode=dark` switches the
-    document to Pico's own dark scheme, anything else (including no parameter)
-    stays on the light document rendered before this existed. Pico ships both
-    schemes in the one stylesheet and selects between them with `data-theme` on
-    the root element ([data-theme=dark] in pico.min.css), so the switch is a
-    single attribute — no extra asset — and the page canvas follows Pico's own
-    --pico-background-color rather than an invented hex. */
+    Color mode follows the embedding page live. Pico ships both schemes in the
+    one stylesheet and selects between them with `data-theme` on the root
+    element ([data-theme=dark] in pico.min.css), so applyMode is a single
+    attribute write — no extra asset, idempotent, and symmetric: back to
+    data-theme="light" restores the light scheme and the white canvas, dark
+    follows Pico's own --pico-background-color rather than an invented hex.
+
+    Resolution, in an IIFE before first paint: an explicit `?mode=` query
+    parameter wins and is applied once (standalone testing, no observation);
+    otherwise the demo reads the parent document's <html> class list and mirrors
+    `dark` on it, re-applying on every attribute change via a MutationObserver
+    that lives for the page lifetime. Cross-origin parents and top-level loads
+    throw or have no parent — those render light and stop. */
 function demoDocument(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en" data-theme="light">
@@ -149,10 +155,33 @@ function demoDocument(title: string, body: string): string {
 <link rel="stylesheet" href="${PICO_CSS}">
 <script>
   (function () {
-    var mode = new URLSearchParams(window.location.search).get('mode')
-    if (mode === 'dark') {
-      document.documentElement.setAttribute('data-theme', 'dark')
+    function applyMode(dark) {
+      document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light')
     }
+
+    var mode = new URLSearchParams(window.location.search).get('mode')
+    if (mode !== null) {
+      applyMode(mode === 'dark')
+      return
+    }
+
+    var root = null
+    try {
+      if (window.parent !== window) root = window.parent.document.documentElement
+    } catch (err) {
+      root = null
+    }
+    if (!root) {
+      applyMode(false)
+      return
+    }
+
+    applyMode(root.classList.contains('dark'))
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains('dark'))
+    })
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] })
+    window.__picoDemoModeObserver = observer
   })()
 </script>
 <style>
@@ -267,7 +296,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
           snapshot: `sources/${SLUG}`,
         },
       ],
-      notes: `Inventory is the docs site's own navigation data (app/data/documentationMenu.json) at a pinned SHA; the Content, Forms and Components categories are the UI-element pages, the rest of the menu is getting-started/customization/layout/about prose. Pico is classless, so most entries are styled native HTML elements rather than named components; canonical taxonomy mapping and the one name override (/docs/forms → "Form elements", whose menu label is just "Overview") are explicit in the config. The Button demo loads Pico's published stylesheet from a version-pinned jsDelivr URL (@picocss/pico@${PICO_VERSION}), which pins the bytes the same way a git ref does even though it is not part of the snapshot. That same stylesheet ships both color schemes, so the demo reads a "mode" query parameter and sets data-theme="dark" on <html> for mode=dark — Pico's own dark scheme and its own --pico-background-color canvas; any other value renders the unchanged light document.`,
+      notes: `Inventory is the docs site's own navigation data (app/data/documentationMenu.json) at a pinned SHA; the Content, Forms and Components categories are the UI-element pages, the rest of the menu is getting-started/customization/layout/about prose. Pico is classless, so most entries are styled native HTML elements rather than named components; canonical taxonomy mapping and the one name override (/docs/forms → "Form elements", whose menu label is just "Overview") are explicit in the config. The Button demo loads Pico's published stylesheet from a version-pinned jsDelivr URL (@picocss/pico@${PICO_VERSION}), which pins the bytes the same way a git ref does even though it is not part of the snapshot. That same stylesheet ships both color schemes, selected by data-theme on <html>, so the demo switches mode by writing that one attribute ("dark" for Pico's own dark scheme and --pico-background-color canvas, "light" to restore the white one). Mode follows the embedding page live: an explicit "mode" query parameter is applied once for standalone testing, otherwise the demo mirrors the "dark" class on the parent document's <html> and re-applies it through a MutationObserver on that element's class attribute; a cross-origin or top-level load has no readable parent and renders light.`,
     },
   }
 }

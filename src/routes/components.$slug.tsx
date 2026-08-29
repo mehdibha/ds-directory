@@ -1,4 +1,3 @@
-import { useEffect, useState, useSyncExternalStore } from 'react'
 import { createFileRoute, Link as RouterLink } from '@tanstack/react-router'
 
 import { getComponentDef, getComponentExamples } from '@/data'
@@ -60,60 +59,25 @@ function ComponentPage() {
   )
 }
 
-// The applied theme, read from the class starter-themes puts on <html>. Its
-// useTheme() context doesn't re-render when a "system" preference resolves to
-// dark on load, so the DOM class — kept correct by its pre-hydration script —
-// is the source of truth. SSR snapshot is light; the client re-renders once.
-function useSiteMode(): 'light' | 'dark' {
-  return useSyncExternalStore(
-    (onChange) => {
-      const observer = new MutationObserver(onChange)
-      observer.observe(document.documentElement, {
-        attributes: true,
-        attributeFilter: ['class'],
-      })
-      return () => observer.disconnect()
-    },
-    () => (document.documentElement.classList.contains('dark') ? 'dark' : 'light'),
-    () => 'light',
-  )
-}
-
 function ExampleCard({ example }: { example: ComponentExample }) {
   const { system, entry, demoSrc } = example
-  // Demos read ?mode= and apply their own system's dark mechanism; systems
-  // without dark mode ignore it and stay light. The key remounts the frame so
-  // the new document always loads (patching src alone can skip a reload).
-  const mode = useSiteMode()
-  // The theme is client-only knowledge (OS preference / stored choice), so the
-  // SSR mode is a guess. Mount the frame only on the client, once the real
-  // mode is known — otherwise the wrong-mode demo loads first and visibly
-  // swaps. Until then the demo area is an empty theme-colored box.
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
   return (
     <article className="overflow-hidden rounded-lg border bg-bg">
       {/* Preview first; the info bar follows. */}
       {demoSrc ? (
-        mounted ? (
-          // Each demo is a standalone page built from the system's real
-          // published package (pinned versions) — sandboxed so nothing leaks
-          // either way.
-          <iframe
-            key={mode}
-            src={`${demoSrc}?mode=${mode}`}
-            title={`${system.name} ${entry.name} demo`}
-            loading="lazy"
-            sandbox="allow-scripts allow-same-origin"
-            className="block w-full border-0 bg-white dark:bg-[#111]"
-            style={{ height: entry.demo?.height ?? 130 }}
-          />
-        ) : (
-          <div
-            className="w-full bg-white dark:bg-[#111]"
-            style={{ height: entry.demo?.height ?? 130 }}
-          />
-        )
+        // Each demo is a standalone page built from the system's real
+        // published package (pinned versions). It resolves light/dark itself:
+        // it reads this page's <html> class through window.parent (same
+        // origin) and observes it, so theme toggles restyle it in place with
+        // no reload. allow-same-origin is what makes that read possible.
+        <iframe
+          src={demoSrc}
+          title={`${system.name} ${entry.name} demo`}
+          loading="lazy"
+          sandbox="allow-scripts allow-same-origin"
+          className="block w-full border-0 bg-white dark:bg-[#111]"
+          style={{ height: entry.demo?.height ?? 130 }}
+        />
       ) : (
         <div className="flex h-24 items-center justify-center text-xs text-fg-muted">
           No live demo yet

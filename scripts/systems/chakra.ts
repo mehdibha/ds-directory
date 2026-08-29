@@ -249,16 +249,23 @@ function parseNav(src: string): NavLeaf[] {
 // versions. `children` is the createElement source for the row contents, so
 // other components can reuse the same shell as the inventory grows.
 //
-// Color mode: the `mode` query parameter ("dark", anything else = light) is
-// read by an inline head script that adds the class `dark` to <html> before
-// first paint. That is Chakra v3's own default dark condition — the published
-// @chakra-ui/react@3.30.0 base preset defines
-// `dark: ".dark &, .dark .chakra-theme:not(.light) &"`, so every recipe and
-// semantic token flips with nothing but that class. Chakra's own globalCss
-// already paints `html { bg: bg }`; the canvas rules below use the same
-// semantic token (`--chakra-colors-bg`, whose `_dark` value is
+// Color mode: `applyMode(dark)` is the single, idempotent, two-way mechanism —
+// it adds or removes the class `dark` on <html> and notifies the React root so
+// the canvas re-renders with the matching background. That class is Chakra v3's
+// own default dark condition — the published @chakra-ui/react@3.30.0 base
+// preset defines `dark: ".dark &, .dark .chakra-theme:not(.light) &"`, so every
+// recipe and semantic token flips with nothing but that class. Chakra's own
+// globalCss already paints `html { bg: bg }`; the canvas rules below use the
+// same semantic token (`--chakra-colors-bg`, whose `_dark` value is
 // `{colors.black}` = #09090B in this version) so the page matches before the
 // module has hydrated. The light path keeps the original `#ffffff` rules.
+//
+// Mode resolution runs in a head IIFE before first paint:
+//   - `?mode=` present → apply it once, no observation (standalone testing).
+//   - otherwise → read the embedding parent's <html> (same-origin only; a
+//     cross-origin or top-level page yields no root, so light is applied) and
+//     mirror its `dark` class live through a MutationObserver on `class` that
+//     is retained for the page lifetime. No reload is involved in a toggle.
 const REACT_VERSION = '19.1.0'
 const EMOTION_VERSION = '11.14.0'
 const CHAKRA_VERSION = '3.30.0'
@@ -266,7 +273,7 @@ const CHAKRA_VERSION = '3.30.0'
     the token's own `_dark` value in @chakra-ui/react@3.30.0
     (`bg.DEFAULT._dark = {colors.black}`, `colors.black = #09090B`). */
 const DARK_CANVAS = '#09090B'
-const CANVAS_BG = `DARK ? "var(--chakra-colors-bg, ${DARK_CANVAS})" : "#ffffff"`
+const CANVAS_BG = `dark ? "var(--chakra-colors-bg, ${DARK_CANVAS})" : "#ffffff"`
 
 function demoHtml(opts: {
   title: string
@@ -281,9 +288,47 @@ function demoHtml(opts: {
 <title>${opts.title}</title>
 <script>
   (function () {
-    if (new URLSearchParams(window.location.search).get("mode") === "dark") {
-      document.documentElement.classList.add("dark");
+    var el = document.documentElement;
+    var listeners = [];
+    var dark = false;
+
+    // The whole dark mechanism, idempotent and two-way.
+    function applyMode(next) {
+      dark = !!next;
+      if (dark) el.classList.add("dark");
+      else el.classList.remove("dark");
+      for (var i = 0; i < listeners.length; i++) listeners[i](dark);
     }
+
+    window.__demoMode = {
+      isDark: function () { return dark; },
+      subscribe: function (fn) { listeners.push(fn); fn(dark); }
+    };
+
+    // 1. Explicit ?mode= override: apply once, never observe.
+    var param = new URLSearchParams(window.location.search).get("mode");
+    if (param !== null) {
+      applyMode(param === "dark");
+      return;
+    }
+
+    // 2. Otherwise mirror the embedding parent's <html> class, live.
+    var root = null;
+    try {
+      if (window.parent !== window) root = window.parent.document.documentElement;
+    } catch (err) {
+      root = null;
+    }
+    if (!root) {
+      applyMode(false);
+      return;
+    }
+    applyMode(root.classList.contains("dark"));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains("dark"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    window.__demoModeObserver = observer;
   })();
 </script>
 <style>
@@ -312,9 +357,8 @@ function demoHtml(opts: {
   import { ChakraProvider, defaultSystem, ${opts.imports} } from "@chakra-ui/react";
 
   const h = React.createElement;
-  const DARK = document.documentElement.classList.contains("dark");
 
-  function Row() {
+  function Row({ dark }) {
     return h(
       "div",
       {
@@ -334,9 +378,14 @@ ${opts.children}
     );
   }
 
-  createRoot(document.getElementById("root")).render(
-    h(ChakraProvider, { value: defaultSystem }, h(Row))
-  );
+  const root = createRoot(document.getElementById("root"));
+
+  // Renders now with the resolved mode, and again on every parent change.
+  window.__demoMode.subscribe(function (dark) {
+    root.render(
+      h(ChakraProvider, { value: defaultSystem }, h(Row, { dark: dark }))
+    );
+  });
 </script>
 </body>
 </html>
@@ -431,7 +480,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
         },
       ],
       notes:
-        'Inventory is the "Components" branch of Chakra’s own docs sidebar (apps/www/docs.config.ts), vendored at a pinned commit SHA — display name and docs slug come straight from it, and docsUrl is that slug under https://chakra-ui.com/docs/components/. The "Concepts" group (overview, composition, animation, colour mode, server components, testing) is prose and is excluded; the Charts branch is a separate add-on package and is out of scope. Canonical taxonomy mapping is editorial: an explicit slug→slug map in the extractor, one canonical slug claimed at most once, unknown docs slugs fail the extract rather than defaulting to null. The Button demo loads @chakra-ui/react 3.30.0 (with React 19.1.0 and @emotion/react 11.14.0) from pinned esm.sh URLs — real published assets, no hand-written styles; its package version is pinned independently of the docs SHA. Demos honour a `mode` query parameter: `mode=dark` adds the class `dark` to <html>, which is Chakra v3’s own default dark condition (`dark: ".dark &, .dark .chakra-theme:not(.light) &"` in the published 3.30.0 base preset), and paints the canvas with Chakra’s semantic `bg` token (`--chakra-colors-bg`, `_dark` = `{colors.black}` = #09090B); anything else is the unchanged light rendering.',
+        'Inventory is the "Components" branch of Chakra’s own docs sidebar (apps/www/docs.config.ts), vendored at a pinned commit SHA — display name and docs slug come straight from it, and docsUrl is that slug under https://chakra-ui.com/docs/components/. The "Concepts" group (overview, composition, animation, colour mode, server components, testing) is prose and is excluded; the Charts branch is a separate add-on package and is out of scope. Canonical taxonomy mapping is editorial: an explicit slug→slug map in the extractor, one canonical slug claimed at most once, unknown docs slugs fail the extract rather than defaulting to null. The Button demo loads @chakra-ui/react 3.30.0 (with React 19.1.0 and @emotion/react 11.14.0) from pinned esm.sh URLs — real published assets, no hand-written styles; its package version is pinned independently of the docs SHA. Demo colour mode is a single idempotent two-way `applyMode(dark)`: it adds or removes the class `dark` on <html> — Chakra v3’s own default dark condition (`dark: ".dark &, .dark .chakra-theme:not(.light) &"` in the published 3.30.0 base preset) — and re-renders the React root so the canvas uses Chakra’s semantic `bg` token (`--chakra-colors-bg`, `_dark` = `{colors.black}` = #09090B) in dark and `#ffffff` in light. Resolution happens in a head IIFE before first paint: an explicit `mode` query parameter is applied once with no observation (standalone testing), otherwise the demo reads the embedding parent’s <html> (same-origin only — a cross-origin or top-level page means light) and mirrors its `dark` class live via a MutationObserver on `class` kept for the page lifetime, so a parent theme toggle restyles the frame both ways without reloading it.',
     },
   }
 }

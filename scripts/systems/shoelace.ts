@@ -180,12 +180,43 @@ function demoDocument(title: string, version: string, body: string): string {
   href="https://cdn.jsdelivr.net/npm/@shoelace-style/shoelace@${version}/cdn/themes/dark.css"
 />
 
-<!-- ?mode=dark → Shoelace's own dark mechanism: the sl-theme-dark class on <html>.
-     Runs in <head>, before first paint, so there is no light flash. -->
+<!-- Dark mode → Shoelace's own mechanism: the sl-theme-dark class on <html>.
+     Runs in <head>, before first paint, so there is no light flash.
+     ?mode= is a standalone-testing override; otherwise the demo follows the
+     parent document's <html class="dark"> live, via a MutationObserver. -->
 <script>
-  if (new URLSearchParams(location.search).get('mode') === 'dark') {
-    document.documentElement.classList.add('sl-theme-dark');
-  }
+  (function () {
+    // Idempotent, switches both ways: adding/removing sl-theme-dark is the
+    // whole mechanism — the light canvas rule applies again once it is gone.
+    function applyMode(dark) {
+      document.documentElement.classList.toggle('sl-theme-dark', !!dark);
+    }
+
+    var override = new URLSearchParams(location.search).get('mode');
+    if (override !== null) {
+      applyMode(override === 'dark');
+      return;
+    }
+
+    var root = null;
+    try {
+      if (window.parent !== window) root = window.parent.document.documentElement;
+    } catch (err) {
+      root = null; // cross-origin parent
+    }
+    if (!root) {
+      applyMode(false);
+      return;
+    }
+
+    applyMode(root.classList.contains('dark'));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains('dark'));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    // Keep the observer alive for the page lifetime.
+    window.__dsModeObserver = observer;
+  })();
 </script>
 
 <!-- Shoelace ${version} autoloader — lazily registers any <sl-*> element it finds -->
@@ -325,7 +356,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
         },
       ],
       notes:
-        'Inventory comes entirely from the Custom Elements Manifest shipped in the @shoelace-style/shoelace npm package. The snapshot is fetched with the live-site source kind, but the URL is version-pinned (jsDelivr serves immutable npm tarball contents per version), so the bytes are pinned as strongly as a repo ref; the version in provenance.ref is read from the manifest’s own package.version. Docs URLs are derived from each module’s components/<dir>/ path, and display names are the title-cased directory (Shoelace’s own docs heading). Canonical taxonomy mapping is an explicit map in the extractor; sub-part elements (sl-tab, sl-menu-item, sl-tree-item…) and utility elements (sl-include, sl-mutation-observer, formatters…) map to null. Demos: Button only in this pass, built from Shoelace’s published light and dark themes + autoloader at the same pinned version. Each demo document reads a “mode” query parameter and, when it is “dark”, applies Shoelace’s own dark mechanism — the sl-theme-dark class on <html> — with the page canvas taken from the theme’s --sl-color-neutral-0 token; light rendering is unchanged because dark.css declares no :root block.',
+        'Inventory comes entirely from the Custom Elements Manifest shipped in the @shoelace-style/shoelace npm package. The snapshot is fetched with the live-site source kind, but the URL is version-pinned (jsDelivr serves immutable npm tarball contents per version), so the bytes are pinned as strongly as a repo ref; the version in provenance.ref is read from the manifest’s own package.version. Docs URLs are derived from each module’s components/<dir>/ path, and display names are the title-cased directory (Shoelace’s own docs heading). Canonical taxonomy mapping is an explicit map in the extractor; sub-part elements (sl-tab, sl-menu-item, sl-tree-item…) and utility elements (sl-include, sl-mutation-observer, formatters…) map to null. Demos: Button only in this pass, built from Shoelace’s published light and dark themes + autoloader at the same pinned version. Each demo document applies Shoelace’s own dark mechanism — the sl-theme-dark class on <html> — with the page canvas taken from the theme’s --sl-color-neutral-0 token; light rendering is unchanged because dark.css declares no :root block. Mode resolution runs before first paint: an explicit “mode” query parameter is a one-shot standalone-testing override, otherwise the document reads the embedding parent’s <html class="dark"> (when same-origin and framed; a cross-origin or top-level document falls back to light) and keeps following it for the page lifetime through a MutationObserver on the parent’s class attribute, toggling the theme class in both directions without reloading.',
     },
   }
 }

@@ -186,8 +186,11 @@ function parsePages(src: string): DocsPage[] {
 // @fontsource at a pinned version, as MUI's own default theme expects.
 const REACT_VERSION = '18.3.1'
 const MUI_VERSION = '6.4.7'
-const EMOTION_DEPS = '@emotion/react@11.14.0,@emotion/styled@11.14.0'
+const EMOTION_VERSION = '11.14.0'
+const EMOTION_DEPS = `@emotion/react@${EMOTION_VERSION},@emotion/styled@${EMOTION_VERSION}`
 const ESM_DEPS = `react@${REACT_VERSION},react-dom@${REACT_VERSION},${EMOTION_DEPS}`
+const EMOTION_REACT_URL = `https://esm.sh/@emotion/react@${EMOTION_VERSION}?deps=react@${REACT_VERSION}`
+const EMOTION_CACHE_URL = `https://esm.sh/@emotion/cache@${EMOTION_VERSION}`
 
 function muiImport(subpath: string): string {
   return `https://esm.sh/@mui/material@${MUI_VERSION}/${subpath}?deps=${ESM_DEPS}`
@@ -212,10 +215,17 @@ const DARK_BACKGROUND = '#121212'
     centered in a horizontal flex row, MUI's own ThemeProvider/createTheme so
     the components paint with the published default theme.
 
-    Dark mode is opt-in per URL: `?mode=dark` switches the document to MUI's
-    real dark mechanism — createTheme({ palette: { mode: 'dark' } }) — and the
-    canvas to that palette's background.default. Anything else is light, and
-    the light path is byte-for-byte the same theme call as before. */
+    Dark mode follows the embedding page live. `applyMode(dark)` is the single
+    switch — it stamps the document ground and re-renders the React root with
+    MUI's real dark mechanism, createTheme({ palette: { mode: 'dark' } }) — and
+    it is idempotent and symmetric: light restores the default theme and the
+    light canvas. Resolution runs in an IIFE before first paint: an explicit
+    `?mode=` in the URL is a standalone-testing override applied once with no
+    observation; otherwise the demo reads the parent document's <html> class
+    (same-origin embed only) and keeps a MutationObserver on it for the page
+    lifetime, so toggling `dark` on the parent restyles the demo in place
+    without reloading the frame. Cross-origin or top-level means no parent
+    root: light, no observer. */
 function buildDemo(spec: DemoSpec): { html: string; height: number } {
   const names = Object.keys(spec.imports).sort()
   const importMap = [
@@ -228,6 +238,8 @@ function buildDemo(spec: DemoSpec): { html: string; height: number } {
         `    "@mui/material/${spec.imports[name]}": "${muiImport(spec.imports[name]!)}"`,
     ),
     `    "@mui/material/styles": "${muiImport('styles')}"`,
+    `    "@emotion/react": "${EMOTION_REACT_URL}"`,
+    `    "@emotion/cache": "${EMOTION_CACHE_URL}"`,
   ].join(',\n')
   const imports = names
     .map(
@@ -258,10 +270,51 @@ function buildDemo(spec: DemoSpec): { html: string; height: number } {
   .row { display: flex; flex-direction: row; align-items: center; gap: 12px; flex-wrap: wrap; }
 </style>
 <script>
-  // Read the requested color scheme before first paint; anything but "dark" is light.
-  if (new URLSearchParams(location.search).get("mode") === "dark") {
-    document.documentElement.dataset.mode = "dark";
-  }
+  // Mode resolution, before first paint. applyMode(dark) is the one switch:
+  // it stamps the document ground and — once the module below has loaded MUI —
+  // re-renders the React root with the matching theme. Until then the latest
+  // requested mode is buffered, so a toggle during load is never lost.
+  window.__demoMode = (function () {
+    var render = null;
+    var current = null;
+    function applyMode(dark) {
+      current = !!dark;
+      document.documentElement.dataset.mode = current ? "dark" : "light";
+      if (render) render(current);
+    }
+    function setRenderer(fn) {
+      render = fn;
+      if (current !== null) fn(current);
+    }
+    var params = new URLSearchParams(location.search);
+    if (params.has("mode")) {
+      // Standalone-testing override: apply once, never observe.
+      applyMode(params.get("mode") === "dark");
+      return { applyMode: applyMode, setRenderer: setRenderer };
+    }
+    var root = null;
+    try {
+      if (window.parent !== window) {
+        root = window.parent.document.documentElement;
+      }
+    } catch (err) {
+      root = null; // cross-origin parent: unreadable
+    }
+    if (!root) {
+      applyMode(false);
+      return { applyMode: applyMode, setRenderer: setRenderer };
+    }
+    applyMode(root.classList.contains("dark"));
+    // Held on window for the page lifetime, so it is never collected.
+    window.__demoModeObserver = new MutationObserver(function () {
+      applyMode(root.classList.contains("dark"));
+    });
+    window.__demoModeObserver.observe(root, {
+      attributes: true,
+      attributeFilter: ["class"],
+    });
+    return { applyMode: applyMode, setRenderer: setRenderer };
+  })();
 </script>
 <script type="importmap">
 {
@@ -278,26 +331,52 @@ ${importMap}
   import { createRoot } from "react-dom/client";
 ${imports}
   import { ThemeProvider, createTheme } from "@mui/material/styles";
+  import { CacheProvider } from "@emotion/react";
+  import createCache from "@emotion/cache";
 
   const h = React.createElement;
-  const dark = document.documentElement.dataset.mode === "dark";
-  const theme = dark ? createTheme({ palette: { mode: "dark" } }) : createTheme();
-  if (dark) {
+  const lightTheme = createTheme();
+  const darkTheme = createTheme({ palette: { mode: "dark" } });
+
+  // One Emotion cache per mode. Both palettes serialize MUI's Button to the
+  // SAME generated class name, so with a single shared cache the rules inserted
+  // by whichever mode rendered first win forever and re-theming silently does
+  // nothing. Separate caches give each mode its own class prefix and its own
+  // <style> container, so the two rule sets coexist and swapping the theme
+  // actually swaps the painted styles — in both directions.
+  const caches = {
+    light: createCache({ key: "mui-light" }),
+    dark: createCache({ key: "mui-dark" }),
+  };
+
+  function Demo({ mode, theme }) {
+    return h(
+      CacheProvider,
+      { value: caches[mode] },
+      h(
+        ThemeProvider,
+        { theme: theme },
+        h("div", { className: "row" }, ${spec.children})
+      )
+    );
+  }
+
+  const reactRoot = createRoot(document.getElementById("root"));
+
+  // The system mechanism, both directions: the live theme object is the source
+  // of truth for the canvas, so light restores MUI's default background too.
+  // \`key\` remounts the subtree, so nothing carries class names across modes.
+  function render(dark) {
+    const mode = dark ? "dark" : "light";
+    const theme = dark ? darkTheme : lightTheme;
     const canvas = theme.palette.background.default;
     document.documentElement.style.background = canvas;
     document.body.style.background = canvas;
     document.body.style.color = theme.palette.text.primary;
+    reactRoot.render(h(Demo, { key: mode, mode: mode, theme: theme }));
   }
 
-  function Demo() {
-    return h(
-      ThemeProvider,
-      { theme: theme },
-      h("div", { className: "row" }, ${spec.children})
-    );
-  }
-
-  createRoot(document.getElementById("root")).render(h(Demo));
+  window.__demoMode.setRenderer(render);
 </script>
 </body>
 </html>

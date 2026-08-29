@@ -216,10 +216,15 @@ function parseStorybook(json: string): Map<string, DocsEntry> {
     rendering Fluent's real published custom elements from pinned CDN URLs.
     The v3 bundle has no import/export statements and registers every
     <fluent-*> element on load; the theme comes from @fluentui/tokens.
-    `?mode=dark` switches the theme applied via Fluent's own `setTheme` from
-    `webLightTheme` to `webDarkTheme` (same pinned package) and paints the canvas
-    with the dark theme's own `--colorNeutralBackground1`. Anything else — no
-    query, `?mode=light`, a junk value — takes the untouched light path. */
+
+    Dark mode is one idempotent `applyMode(dark)`: it stamps/removes
+    `data-mode="dark"` on <html> (which paints the canvas) and calls Fluent's
+    own `setTheme()` with `webDarkTheme` / `webLightTheme` from the same pinned
+    tokens package, so it switches both ways. Resolution: an explicit `?mode=`
+    query wins once (standalone testing, no observation); otherwise the demo
+    reads the embedding parent's <html> class list and keeps following it live
+    through a MutationObserver held for the page lifetime. Cross-origin or
+    top-level (no reachable parent) means light. */
 function demoDocument(opts: { title: string; body: string }): string {
   return `<!doctype html>
 <html lang="en">
@@ -230,14 +235,52 @@ function demoDocument(opts: { title: string; body: string }): string {
 <!-- Fluent UI Web Components v${PKG_VERSION} (Microsoft), official published bundle, pinned. -->
 <script src="https://cdn.jsdelivr.net/npm/@fluentui/web-components@${PKG_VERSION}/dist/web-components.min.js"></script>
 <script>
-  // Runs before the body parses: stamp the requested mode on <html> so the
-  // canvas is already dark on first paint. No query param (or any value other
-  // than "dark") leaves the document exactly as it was.
+  // Runs before the body parses, so the resolved mode is stamped on <html>
+  // for the very first paint (no light flash).
   (function () {
+    var dark = false;
+
+    // The one place the system's dark mechanism lives. Idempotent, and it
+    // switches both ways: the data-mode stamp the canvas rules key off is
+    // added or removed, and Fluent's own setTheme() is re-run with the
+    // matching published theme object. The theme modules are imported by the
+    // module script below; until they resolve, applyMode only stamps and the
+    // module script re-applies the current mode as soon as they land.
+    function applyMode(next) {
+      dark = !!next;
+      var html = document.documentElement;
+      if (dark) html.setAttribute("data-mode", "dark");
+      else html.removeAttribute("data-mode");
+      var themes = window.__fluentThemes;
+      if (!themes) return;
+      try {
+        globalThis.Fluent.setTheme(dark ? themes.dark : themes.light);
+      } catch (e) {
+        console.error("Fluent setTheme failed", e);
+      }
+    }
+    window.__applyMode = applyMode;
+    window.__isDark = function () { return dark; };
+
+    // Explicit ?mode= wins once and disables observation (standalone testing).
+    var override = null;
+    try { override = new URLSearchParams(location.search).get("mode"); } catch (e) {}
+    if (override) { applyMode(override === "dark"); return; }
+
+    // Otherwise follow the embedding parent's <html> class list, live.
+    var root = null;
     try {
-      var mode = new URLSearchParams(location.search).get("mode");
-      if (mode === "dark") document.documentElement.setAttribute("data-mode", "dark");
-    } catch (e) {}
+      if (window.parent !== window) root = window.parent.document.documentElement;
+    } catch (e) { root = null; }
+    if (!root) { applyMode(false); return; }
+
+    applyMode(root.classList.contains("dark"));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains("dark"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    // Held for the page lifetime so it is never collected.
+    window.__modeObserver = observer;
   })();
 </script>
 <style>
@@ -273,17 +316,16 @@ ${opts.body}
   <script type="module">
     // Official Fluent design tokens package (native ESM, fully-specified
     // relative imports, so it loads straight from the CDN with no bundler).
-    // Both themes ship in the same pinned package: webLightTheme /
-    // webDarkTheme, applied through Fluent's own setTheme().
-    const dark = document.documentElement.getAttribute("data-mode") === "dark";
-    const module = dark
-      ? await import("https://cdn.jsdelivr.net/npm/@fluentui/tokens@${TOKENS_VERSION}/lib/themes/web/darkTheme.js")
-      : await import("https://cdn.jsdelivr.net/npm/@fluentui/tokens@${TOKENS_VERSION}/lib/themes/web/lightTheme.js");
-    try {
-      globalThis.Fluent.setTheme(dark ? module.webDarkTheme : module.webLightTheme);
-    } catch (e) {
-      console.error("Fluent setTheme failed", e);
-    }
+    // Both themes ship in the same pinned package and are loaded up front, so
+    // applyMode can switch either way without another network round trip.
+    const [light, dark] = await Promise.all([
+      import("https://cdn.jsdelivr.net/npm/@fluentui/tokens@${TOKENS_VERSION}/lib/themes/web/lightTheme.js"),
+      import("https://cdn.jsdelivr.net/npm/@fluentui/tokens@${TOKENS_VERSION}/lib/themes/web/darkTheme.js"),
+    ]);
+    window.__fluentThemes = { light: light.webLightTheme, dark: dark.webDarkTheme };
+    // Re-apply the already-resolved mode now that the real themes exist; every
+    // later applyMode call (observer or override) finds them itself.
+    window.__applyMode(window.__isDark());
   </script>
 </body>
 </html>
@@ -380,7 +422,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
       ],
       notes:
         `Inventory is the union of two vendored machine-readable sources: the custom-elements.json shipped by @fluentui/web-components ${PKG_VERSION} (every registered <fluent-*> element, keyed by its dist/esm/<dir> directory) and the public Storybook's generated index.json (every Components/* docs page, keyed by the src/<dir> its stories are authored in; two directories that differ between the two — option/dropdown-option and textarea/text-area — are aliased onto the element directory). The Storybook tracks the repo's main branch, so it documents a few components the pinned package does not yet register (and a few registered sub-elements have no docs page of their own); the note on each entry says which side it came from. Names are the last segment of the Storybook story title, falling back to the exported class name; docsUrl is the Storybook docs path, null when there is no docs page. The jsdelivr URL carries the package version, so that file is pinned by ref despite being fetched through the live-site snapshot path; the Storybook index URL is not pinned and is stamped with retrievedAt. ` +
-        `The Button demo is not derived from the snapshot: it loads the published @fluentui/web-components ${PKG_VERSION} bundle and the @fluentui/tokens ${TOKENS_VERSION} web themes from pinned jsDelivr URLs (verified rendering in a browser), so its markup and pinned versions live in this config. The demo reads a "mode" query parameter: mode=dark applies webDarkTheme (lib/themes/web/darkTheme.js from the same pinned tokens package) through Fluent's own setTheme() and paints the canvas with that theme's colorNeutralBackground1; any other value keeps the unchanged light path with webLightTheme.`,
+        `The Button demo is not derived from the snapshot: it loads the published @fluentui/web-components ${PKG_VERSION} bundle and the @fluentui/tokens ${TOKENS_VERSION} web themes from pinned jsDelivr URLs (verified rendering in a browser), so its markup and pinned versions live in this config. Dark mode is a single idempotent applyMode(dark) that stamps or removes data-mode="dark" on <html> (painting the canvas with the dark theme's own colorNeutralBackground1) and re-runs Fluent's setTheme() with webDarkTheme or webLightTheme (lib/themes/web/{darkTheme,lightTheme}.js from the same pinned tokens package, both preloaded), so it switches both ways. An explicit "mode" query parameter applies once and disables observation (standalone testing); otherwise the demo resolves dark from the embedding parent document's <html> class list and keeps following it live via a MutationObserver on that element's class attribute, held for the page lifetime. A cross-origin or top-level page has no reachable parent and stays light.`,
     },
   }
 }

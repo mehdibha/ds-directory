@@ -183,10 +183,20 @@ const SECTION_NOTES: Record<string, string> = {
     var(--gray-1) }`), so the page background is the system's own token rather
     than an invented hex. `<Theme>` is given the matching `appearance` so its
     own element carries the class too (that is what sets `color-scheme: dark`
-    via `.radix-themes:where(.dark, .dark-theme)`). A tiny inline script in
-    `<head>` reads `?mode=dark` and adds the class before first paint; with any
-    other value nothing is added and every dark rule below is inert, so light
-    rendering is byte-for-byte the same as before. */
+    via `.radix-themes:where(.dark, .dark-theme)`).
+
+    Mode resolution is an inline `<head>` IIFE running before first paint. It
+    exposes an idempotent `applyMode(dark)` that both adds and removes the
+    class and re-renders the React root through the `__radixDemoRender` hook
+    the module body registers, so the `<Theme appearance>` follows. If a
+    `?mode=` parameter is present it is applied once and nothing is observed
+    (standalone testing override). Otherwise the demo mirrors its embedding
+    parent: it reads `window.parent.document.documentElement` (guarded — a
+    cross-origin parent or a top-level load throws or yields no root, and the
+    page then simply renders light), applies dark iff that element carries the
+    `dark` class, and keeps a MutationObserver on its `class` attribute for the
+    page lifetime so parent theme toggles restyle the demo in place, both
+    directions, with no reload. */
 function demoDocument(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
@@ -196,8 +206,40 @@ function demoDocument(title: string, body: string): string {
 <title>${title}</title>
 <script>
   (function () {
+    function applyMode(dark) {
+      var el = document.documentElement;
+      if (dark) el.classList.add("dark");
+      else el.classList.remove("dark");
+      window.__radixDemoDark = dark;
+      if (window.__radixDemoRender) window.__radixDemoRender(dark);
+    }
+    window.__radixDemoApplyMode = applyMode;
+
     var mode = new URLSearchParams(window.location.search).get("mode");
-    if (mode === "dark") document.documentElement.classList.add("dark");
+    if (mode !== null) {
+      applyMode(mode === "dark");
+      return;
+    }
+
+    var root = null;
+    try {
+      if (window.parent !== window) {
+        root = window.parent.document.documentElement;
+      }
+    } catch (e) {
+      root = null;
+    }
+    if (!root) {
+      applyMode(false);
+      return;
+    }
+
+    applyMode(root.classList.contains("dark"));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains("dark"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    window.__radixDemoObserver = observer;
   })();
 </script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@radix-ui/themes@${DEMO_VERSION}/styles.css" />
@@ -255,26 +297,30 @@ const DEMO_BODIES: Record<string, { body: string; height: number }> = {
 
   const h = React.createElement;
 
-  const dark =
-    new URLSearchParams(window.location.search).get("mode") === "dark";
+  const root = createRoot(document.getElementById("root"));
 
-  const row = h(
-    Theme,
-    {
-      appearance: dark ? "dark" : "light",
-      accentColor: "indigo",
-      grayColor: "slate",
-      radius: "medium",
-      scaling: "100%",
-      hasBackground: false,
-      className: "rt-Theme-fill",
-    },
-    h(Button, { variant: "solid", size: "2" }, "Primary"),
-    h(Button, { variant: "soft", size: "2" }, "Secondary"),
-    h(Button, { variant: "solid", size: "2", disabled: true }, "Disabled")
-  );
+  function render(dark) {
+    root.render(
+      h(
+        Theme,
+        {
+          appearance: dark ? "dark" : "light",
+          accentColor: "indigo",
+          grayColor: "slate",
+          radius: "medium",
+          scaling: "100%",
+          hasBackground: false,
+          className: "rt-Theme-fill",
+        },
+        h(Button, { variant: "solid", size: "2" }, "Primary"),
+        h(Button, { variant: "soft", size: "2" }, "Secondary"),
+        h(Button, { variant: "solid", size: "2", disabled: true }, "Disabled")
+      )
+    );
+  }
 
-  createRoot(document.getElementById("root")).render(row);`,
+  window.__radixDemoRender = render;
+  render(window.__radixDemoDark === true);`,
   },
 }
 
@@ -338,7 +384,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
           snapshot: 'sources/radix',
         },
       ],
-      notes: `Inventory is every \`themes/docs/components/<slug>\` route in ${ROUTES_PATH} from radix-ui/website at pinned SHA ${REF} — the docs site's own navigation table, so names (the docs titles) and docsUrls are derived, never typed. Radix documents its layout primitives, typography components and render utilities in the same component section; they are emitted as entries with a note saying what they are, and most map to null in the taxonomy. The canonical-taxonomy mapping is an editorial table in the extractor, not extracted. Demo documents load only Radix's published assets at pinned versions — @radix-ui/themes@${DEMO_VERSION} styles.css from jsDelivr and the @radix-ui/themes@${DEMO_VERSION} / react@${REACT_VERSION} ESM builds from esm.sh, and honour a \`?mode=dark\` query parameter using Radix Themes' own dark mechanism — the \`dark\` class on the root element, which the pinned styles.css uses to carry the dark scales and to set \`--color-background\`, the token the demo paints the page with. Demo coverage in this pass is Button only; every other entry is inventory (name + docsUrl + mapping) with demo null.`,
+      notes: `Inventory is every \`themes/docs/components/<slug>\` route in ${ROUTES_PATH} from radix-ui/website at pinned SHA ${REF} — the docs site's own navigation table, so names (the docs titles) and docsUrls are derived, never typed. Radix documents its layout primitives, typography components and render utilities in the same component section; they are emitted as entries with a note saying what they are, and most map to null in the taxonomy. The canonical-taxonomy mapping is an editorial table in the extractor, not extracted. Demo documents load only Radix's published assets at pinned versions — @radix-ui/themes@${DEMO_VERSION} styles.css from jsDelivr and the @radix-ui/themes@${DEMO_VERSION} / react@${REACT_VERSION} ESM builds from esm.sh, and follow dark mode using Radix Themes' own mechanism — the \`dark\` class on the root element (plus the matching \`<Theme appearance>\`), which the pinned styles.css uses to carry the dark scales and to set \`--color-background\`, the token the demo paints the page with. A \`?mode=\` query parameter, when present, applies that mode once for standalone testing; otherwise the demo observes its embedding parent's \`<html class>\` with a MutationObserver and restyles itself in place, both directions, whenever the parent toggles dark (no reload; a cross-origin or top-level parent falls back to light). Demo coverage in this pass is Button only; every other entry is inventory (name + docsUrl + mapping) with demo null.`,
     },
   }
 }

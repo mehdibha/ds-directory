@@ -211,14 +211,56 @@ const LIGHT_ZONE = 'cds--white'
 const DARK_ZONE = 'cds--g100'
 
 /** Runs at the top of <body> (so document.body exists and the swap lands
-    before first paint): `?mode=dark` switches the zone class, anything else
-    leaves the light zone exactly as it was. */
+    before first paint). `applyMode` is the whole mechanism in one idempotent
+    function that switches both ways — it removes the opposite theme-zone class
+    and adds the wanted one, so light restores Carbon's own white zone (and with
+    it the `--cds-background` the page canvas reads).
+
+    Resolution: an explicit `?mode=` in the URL wins and stops there (standalone
+    testing). Otherwise the demo follows its embedder live — it reads the parent
+    document's <html> class list, applies dark iff it carries `dark`, and keeps a
+    MutationObserver on that element's `class` attribute for the page lifetime so
+    later toggles restyle the iframe in place, with no reload. A cross-origin
+    parent (or no parent at all) throws on access, which means no root to watch:
+    the demo settles on light. */
 const MODE_SCRIPT = `      <script>
-        try {
-          if (new URLSearchParams(location.search).get("mode") === "dark") {
-            document.body.classList.replace("${LIGHT_ZONE}", "${DARK_ZONE}");
+        (function () {
+          function applyMode(dark) {
+            var body = document.body;
+            body.classList.remove(dark ? "${LIGHT_ZONE}" : "${DARK_ZONE}");
+            body.classList.add(dark ? "${DARK_ZONE}" : "${LIGHT_ZONE}");
           }
-        } catch (e) {}
+          var override = null;
+          try {
+            override = new URLSearchParams(location.search).get("mode");
+          } catch (e) {}
+          if (override) {
+            applyMode(override === "dark");
+            return;
+          }
+          var root = null;
+          try {
+            if (window.parent !== window) {
+              root = window.parent.document.documentElement;
+            }
+          } catch (e) {
+            root = null;
+          }
+          if (!root) {
+            applyMode(false);
+            return;
+          }
+          var sync = function () {
+            applyMode(root.classList.contains("dark"));
+          };
+          sync();
+          var observer = new MutationObserver(sync);
+          observer.observe(root, {
+            attributes: true,
+            attributeFilter: ["class"],
+          });
+          window.__cdsModeObserver = observer;
+        })();
       </script>`
 
 /** A complete standalone document loading Carbon's real published compiled
@@ -383,7 +425,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
         },
       ],
       notes:
-        'Inventory comes from the Carbon React Storybook’s generated index.json (unversioned URL, so it is stamped live-site with the snapshot’s retrievedAt); component names and docs URLs are derived from its story titles and ids. Excluded on purpose: the Preview (unreleased), Deprecated, Elements (grid/type/icon foundations), Hooks, Helpers and Utilities sections. Feature-flag stories are folded into their component, and the Fluid Components / Notifications / Skeleton / UI Shell folders are unwrapped to their leaf components (the folder is recorded in each entry’s note). Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads the compiled @carbon/styles CSS from jsDelivr at a pinned version, read from the vendored package.json of that exact version — a pinned URL despite the live-site fetch; only Button has a demo so far. Demos honour a “mode” query parameter: mode=dark swaps the body’s Carbon theme-zone class from cds--white to cds--g100 (both declared in that same compiled stylesheet), and the page canvas reads the zone’s own --cds-background token, so dark mode uses Carbon’s real g100 theme rather than any invented colour.',
+        'Inventory comes from the Carbon React Storybook’s generated index.json (unversioned URL, so it is stamped live-site with the snapshot’s retrievedAt); component names and docs URLs are derived from its story titles and ids. Excluded on purpose: the Preview (unreleased), Deprecated, Elements (grid/type/icon foundations), Hooks, Helpers and Utilities sections. Feature-flag stories are folded into their component, and the Fluid Components / Notifications / Skeleton / UI Shell folders are unwrapped to their leaf components (the folder is recorded in each entry’s note). Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads the compiled @carbon/styles CSS from jsDelivr at a pinned version, read from the vendored package.json of that exact version — a pinned URL despite the live-site fetch; only Button has a demo so far. Dark mode swaps the body’s Carbon theme-zone class between cds--white and cds--g100 (both declared in that same compiled stylesheet), and the page canvas reads the zone’s own --cds-background token, so dark mode uses Carbon’s real g100 theme rather than any invented colour. The demo resolves its mode from its embedder: an explicit “mode” query parameter wins and is applied once (standalone testing), otherwise the page follows the parent document’s <html> class list live — dark iff it carries “dark” — via a MutationObserver on that element’s class attribute, so toggling the site theme restyles the iframe in place without reloading it; a cross-origin or absent parent falls back to light.',
     },
   }
 }

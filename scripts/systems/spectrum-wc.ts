@@ -190,12 +190,19 @@ function sectionNote(titles: string[]): string | null {
     URLs. `imports` are esm.sh module specifiers, `body` the markup inside
     <sp-theme>.
 
-    `?mode=dark` switches to the system's own dark mechanism: <sp-theme
-    color="dark">, which Theme resolves against the "dark-spectrum-two" color
-    fragment registered by spectrum-two/theme-dark-core-tokens.js (imported at
-    the same pinned version). The page canvas is then painted from that
-    theme's own `--spectrum-background-layer-1-color`. Any other mode value
-    leaves the light document byte-for-byte as it was. */
+    Dark mode is the system's own mechanism: <sp-theme color="dark">, which
+    Theme resolves against the "dark-spectrum-two" color fragment registered
+    by spectrum-two/theme-dark-core-tokens.js (imported at the same pinned
+    version). The page canvas is then painted from that theme's own
+    `--spectrum-background-layer-1-color`. `applyMode(dark)` is idempotent and
+    switches both ways.
+
+    Mode resolution: an explicit `?mode=` in the URL wins once and disables
+    observation (standalone testing). Otherwise the demo observes the
+    embedding parent's <html> class list live — dark iff it carries `dark` —
+    via a MutationObserver that lives for the page lifetime, so toggling the
+    host theme restyles the demo in place without reloading the frame. A
+    cross-origin or top-level document yields no observable root: light. */
 function demoDocument(opts: {
   title: string
   imports: string[]
@@ -211,13 +218,46 @@ function demoDocument(opts: {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${opts.title}</title>
 <script>
-  // Runs before the body parses: stamp the requested mode on <html> so the
-  // dark rules below apply on the very first paint (no light flash).
+  // Runs before the body parses, so the resolved mode is stamped on <html>
+  // for the very first paint (no light flash).
   (function () {
+    var dark = false;
+
+    // The one place the system's dark mechanism lives. Idempotent, and it
+    // switches both ways: dark drops <sp-theme color="dark"> and the
+    // data-mode stamp the canvas rules key off, light restores both.
+    function applyMode(next) {
+      dark = !!next;
+      var html = document.documentElement;
+      if (dark) html.setAttribute('data-mode', 'dark');
+      else html.removeAttribute('data-mode');
+      // <sp-theme> is parsed after this script; the body re-calls applyMode
+      // once it exists, and every later call finds it.
+      var theme = document.querySelector('sp-theme');
+      if (theme) theme.setAttribute('color', dark ? 'dark' : 'light');
+    }
+    window.__applyMode = applyMode;
+    window.__isDark = function () { return dark; };
+
+    // Explicit ?mode= wins once and disables observation (standalone testing).
+    var override = null;
+    try { override = new URLSearchParams(location.search).get('mode'); } catch (e) {}
+    if (override) { applyMode(override === 'dark'); return; }
+
+    // Otherwise follow the embedding parent's <html> class list, live.
+    var root = null;
     try {
-      var mode = new URLSearchParams(location.search).get('mode');
-      if (mode === 'dark') document.documentElement.setAttribute('data-mode', 'dark');
-    } catch (e) {}
+      if (window.parent !== window) root = window.parent.document.documentElement;
+    } catch (e) { root = null; }
+    if (!root) { applyMode(false); return; }
+
+    applyMode(root.classList.contains('dark'));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains('dark'));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    // Held for the page lifetime so it is never collected.
+    window.__modeObserver = observer;
   })();
 </script>
 <style>
@@ -242,7 +282,7 @@ function demoDocument(opts: {
   }
   sp-theme:not(:defined) { opacity: 0; }
 
-  /* Dark mode — only reached when ?mode=dark stamped data-mode on <html>. */
+  /* Dark mode — reached whenever applyMode stamped data-mode on <html>. */
   html[data-mode="dark"], html[data-mode="dark"] body { background: ${DARK_CANVAS}; }
   html[data-mode="dark"] body { padding: 0; }
   html[data-mode="dark"] sp-theme {
@@ -260,11 +300,10 @@ function demoDocument(opts: {
 ${opts.body}
   </sp-theme>
   <script>
-    // Flip the system's real dark mechanism: <sp-theme color="dark">. The
-    // element is already parsed above, so this runs before DOMContentLoaded.
-    if (document.documentElement.getAttribute('data-mode') === 'dark') {
-      document.querySelector('sp-theme').setAttribute('color', 'dark');
-    }
+    // <sp-theme> now exists, so re-apply the already-resolved mode to reach
+    // the system's real mechanism (color="dark"/"light"). Runs before
+    // DOMContentLoaded; later observer callbacks find the element themselves.
+    window.__applyMode(window.__isDark());
   </script>
 
   <script type="module">
@@ -362,7 +401,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
       ],
       notes:
         "Inventory is the published Storybook's generated index.json: one entry per ./packages/<name> story group, which is one shipped element family and one docs page (./tools/* stories — theme, grid, styles, truncated — are infrastructure, not components, and are excluded). Names are derived from the shared story-title path, falling back to the package directory when a package documents several families (Textfield/Textarea, Menu/Menu Item…); the `note` field lists those sections. The index.json URL is not version-pinned, so this is a live-site tier source stamped with retrievedAt. docsUrl is derived from the package directory against the documented /components/<package>/ URL pattern. The Button demo is not derived from the snapshot: it loads @spectrum-web-components/theme and /button at the pinned version " +
-        `${DEMO_VERSION} from esm.sh (verified rendering in a browser), so its markup and pinned version live in this config. The demo reads ?mode=dark and applies Spectrum's own mechanism — <sp-theme color="dark">, resolved against the "dark-spectrum-two" color fragment registered by spectrum-two/theme-dark-core-tokens.js at the same pinned version — with the page canvas painted from that theme's --spectrum-background-layer-1-color (--spectrum-gray-50, rgb(27,27,27) at ${DEMO_VERSION}).`,
+        `${DEMO_VERSION} from esm.sh (verified rendering in a browser), so its markup and pinned version live in this config. Dark mode applies Spectrum's own mechanism — <sp-theme color="dark">, resolved against the "dark-spectrum-two" color fragment registered by spectrum-two/theme-dark-core-tokens.js at the same pinned version — with the page canvas painted from that theme's --spectrum-background-layer-1-color (--spectrum-gray-50, rgb(27,27,27) at ${DEMO_VERSION}). It is wrapped in one idempotent applyMode(dark) that switches both ways. An explicit ?mode= in the URL applies once and stops (standalone testing); otherwise the demo reads the embedding parent's documentElement (same-origin only; cross-origin or top-level falls back to light) and follows its 'dark' class live via a MutationObserver on the class attribute that lives for the page lifetime, so host theme toggles restyle the frame in place.`,
     },
   }
 }

@@ -227,13 +227,22 @@ interface DemoSpec {
     centered in a horizontal flex row, antd's own published stylesheet-in-JS
     doing all the painting.
 
-    Dark mode: `?mode=dark` switches the document to antd's own dark theme —
-    ConfigProvider with `theme.algorithm = antd.theme.darkAlgorithm`, the
-    mechanism antd v5 publishes for dark. The page canvas is painted with
-    `colorBgContainer` read out of antd's own dark design token
+    Dark mode: the mechanism is antd v5's own — ConfigProvider with
+    `theme.algorithm = antd.theme.darkAlgorithm` — and the page canvas is
+    painted with `colorBgContainer` read out of antd's own dark design token
     (`antd.theme.getDesignToken({ algorithm: darkAlgorithm })`), so no hex is
-    invented here. Any other `mode` value (or none) renders exactly the light
-    document as before: no ConfigProvider wrapper, no background override. */
+    invented here. It is wrapped in a single idempotent `applyMode(dark)` that
+    switches both ways: dark re-renders the React root inside the provider and
+    sets `--demo-bg`, light re-renders the bare tree and removes the override.
+
+    Mode resolution happens once, before first paint. `?mode=` in the URL is a
+    standalone-testing override: applied once, no observation. Otherwise the
+    demo follows its embedding page live — it reads
+    `window.parent.document.documentElement`, applies dark iff that element
+    carries the `dark` class, and keeps a MutationObserver on its `class`
+    attribute for the page lifetime so parent theme toggles restyle the demo in
+    place, without a reload. Cross-origin parents (the read throws) and
+    top-level loads have no such root and render light. */
 function buildDemo(spec: DemoSpec): { html: string; height: number } {
   const globals = [...spec.globals]
     .sort()
@@ -263,15 +272,6 @@ function buildDemo(spec: DemoSpec): { html: string; height: number } {
 <script src="https://cdn.jsdelivr.net/npm/react-dom@${DEMO_REACT_VERSION}/umd/react-dom.production.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/dayjs@${DEMO_DAYJS_VERSION}/dayjs.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/antd@${DEMO_ANTD_VERSION}/dist/antd.min.js"></script>
-<script>
-  // Read ?mode=dark before first paint and, when dark, paint the canvas with
-  // antd's own dark colorBgContainer token — never a hand-picked hex.
-  var isDark = new URLSearchParams(location.search).get("mode") === "dark";
-  if (isDark) {
-    var darkToken = antd.theme.getDesignToken({ algorithm: antd.theme.darkAlgorithm });
-    document.documentElement.style.setProperty("--demo-bg", darkToken.colorBgContainer);
-  }
-</script>
 </head>
 <body>
 <div id="root"></div>
@@ -281,12 +281,50 @@ function buildDemo(spec: DemoSpec): { html: string; height: number } {
 ${globals}
 
   var content = e("div", { className: "row" }, ${spec.children});
+  var reactRoot = ReactDOM.createRoot(document.getElementById("root"));
+  var darkToken = antd.theme.getDesignToken({ algorithm: antd.theme.darkAlgorithm });
 
-  ReactDOM.createRoot(document.getElementById("root")).render(
-    isDark
-      ? e(ConfigProvider, { theme: { algorithm: antd.theme.darkAlgorithm } }, content)
-      : content
-  );
+  // The whole dark mechanism, idempotent and switching both ways: antd v5's own
+  // darkAlgorithm via ConfigProvider, plus a canvas painted with antd's own
+  // colorBgContainer token — never a hand-picked hex. Light re-renders the bare
+  // tree and drops the canvas override.
+  function applyMode(dark) {
+    if (dark) {
+      document.documentElement.style.setProperty("--demo-bg", darkToken.colorBgContainer);
+      reactRoot.render(
+        e(ConfigProvider, { theme: { algorithm: antd.theme.darkAlgorithm } }, content)
+      );
+    } else {
+      document.documentElement.style.removeProperty("--demo-bg");
+      reactRoot.render(content);
+    }
+  }
+
+  // Resolve the mode before first paint. ?mode= is a standalone-testing
+  // override applied once; otherwise follow the embedding page's <html class>
+  // live, for the lifetime of this document.
+  window.__demoModeObserver = (function () {
+    var override = new URLSearchParams(location.search).get("mode");
+    if (override !== null) {
+      applyMode(override === "dark");
+      return null;
+    }
+    var parentRoot = null;
+    try {
+      if (window.parent !== window) parentRoot = window.parent.document.documentElement;
+    } catch (err) {
+      parentRoot = null;
+    }
+    if (!parentRoot) {
+      applyMode(false);
+      return null;
+    }
+    var sync = function () { applyMode(parentRoot.classList.contains("dark")); };
+    sync();
+    var observer = new MutationObserver(sync);
+    observer.observe(parentRoot, { attributes: true, attributeFilter: ["class"] });
+    return observer;
+  })();
 </script>
 </body>
 </html>
@@ -378,7 +416,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
           snapshot: `sources/${SLUG}`,
         },
       ],
-      notes: `Inventory is the join of two snapshot files: ant.design/sitemap.xml decides which components are documented (every English /components/<slug> page, minus the non-component pages _util, overview and changelog) and supplies the docs URL verbatim; the antd@${ANTD_VERSION} package entry point (es/index.js, fetched from a version-pinned jsDelivr URL — pinned bytes even though the snapshot kind is live-site) supplies the system's own name per slug. Extraction throws when a documented slug is missing from the canonical map, when the map holds a slug no longer documented, or when a documented slug has no exported name, so upstream additions fail loudly. The one documented component with no default export is Icon, whose glyphs ship in @ant-design/icons; its name comes from an explicit docs-only map. \`message\` and \`notification\` keep antd's lowercase export identifiers because those are imperative API objects rather than component classes. Canonical taxonomy mapping and the notes are editorial (an explicit map in the extractor), not extracted. Only Button carries a demo; it loads antd 5.29.3 UMD with React ${DEMO_REACT_VERSION} and dayjs ${DEMO_DAYJS_VERSION} from pinned jsDelivr URLs — the 5.x line is used because it is the last one publishing dist/antd.min.js for script-tag use, so the demo is one major version behind the ${ANTD_VERSION} inventory. The demo document reads a \`mode\` query parameter: \`?mode=dark\` renders it inside ConfigProvider with \`theme.algorithm = antd.theme.darkAlgorithm\` (antd v5's own dark mechanism) and paints the page canvas with \`colorBgContainer\` read from \`antd.theme.getDesignToken\` under that same algorithm, so the dark canvas is an antd token rather than a chosen hex; any other value renders the unchanged light document. Ant Design documents component families on one page (Input covers TextArea/Search/Password/OTP, DatePicker covers RangePicker), so the sub-components of those families have no separate inventory entry.`,
+      notes: `Inventory is the join of two snapshot files: ant.design/sitemap.xml decides which components are documented (every English /components/<slug> page, minus the non-component pages _util, overview and changelog) and supplies the docs URL verbatim; the antd@${ANTD_VERSION} package entry point (es/index.js, fetched from a version-pinned jsDelivr URL — pinned bytes even though the snapshot kind is live-site) supplies the system's own name per slug. Extraction throws when a documented slug is missing from the canonical map, when the map holds a slug no longer documented, or when a documented slug has no exported name, so upstream additions fail loudly. The one documented component with no default export is Icon, whose glyphs ship in @ant-design/icons; its name comes from an explicit docs-only map. \`message\` and \`notification\` keep antd's lowercase export identifiers because those are imperative API objects rather than component classes. Canonical taxonomy mapping and the notes are editorial (an explicit map in the extractor), not extracted. Only Button carries a demo; it loads antd 5.29.3 UMD with React ${DEMO_REACT_VERSION} and dayjs ${DEMO_DAYJS_VERSION} from pinned jsDelivr URLs — the 5.x line is used because it is the last one publishing dist/antd.min.js for script-tag use, so the demo is one major version behind the ${ANTD_VERSION} inventory. The demo document's dark mechanism is antd v5's own: ConfigProvider with \`theme.algorithm = antd.theme.darkAlgorithm\`, plus a page canvas painted with \`colorBgContainer\` read from \`antd.theme.getDesignToken\` under that same algorithm, so the dark canvas is an antd token rather than a chosen hex. It is wrapped in one idempotent \`applyMode(dark)\` that switches both ways (light re-renders the bare tree and removes the canvas override). Mode is resolved before first paint: a \`mode\` query parameter, when present, is a standalone-testing override applied once with no observation; otherwise the demo reads \`window.parent.document.documentElement\`, applies dark iff that element carries the \`dark\` class, and keeps a MutationObserver on its \`class\` attribute for the page lifetime, so toggling the embedding page's theme restyles the demo in place without reloading the iframe. A cross-origin parent (the read throws) or a top-level load renders light. Ant Design documents component families on one page (Input covers TextArea/Search/Password/OTP, DatePicker covers RangePicker), so the sub-components of those families have no separate inventory entry.`,
     },
   }
 }

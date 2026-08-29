@@ -55,11 +55,22 @@ const SOURCE: SystemConfig['source'] = {
     to daisyUI's own --color-base-100 (the theme-controller demo needs the page
     to react to the theme it switches).
 
-    Dark mode: `?mode=dark` stamps daisyUI's own dark mechanism —
-    data-theme="dark" on <html>, the selector the pinned daisyui.css ships its
-    [data-theme=dark] custom-property block under — before the stylesheet
-    parses, and the page canvas follows --color-base-100 from that same block.
-    Any other value (or none) leaves the light document byte-identical. */
+    Dark mode: the mechanism is daisyUI's own — data-theme="dark" on <html>,
+    the selector the pinned daisyui.css ships its [data-theme=dark]
+    custom-property block under; the page canvas follows --color-base-100 from
+    that same block. applyMode() writes it both ways: dark stamps
+    data-theme="dark", light restores the document's own light state (the
+    explicit data-theme="light", or no attribute at all for a themed demo, so
+    the theme-controller demo falls back to its own default).
+
+    Mode resolution runs in an IIFE before the stylesheet parses, so the theme
+    is already correct at first paint:
+      - `?mode=` in the URL wins and is applied once (standalone testing).
+      - otherwise the demo observes its embedder: it mirrors the `dark` class
+        on the parent document's <html> and keeps a MutationObserver on it for
+        the page lifetime, so toggling the host theme restyles the live iframe
+        without reloading it.
+      - cross-origin parent, or no parent at all, means no root to read: light. */
 function demoDoc(
   name: string,
   body: string,
@@ -67,6 +78,9 @@ function demoDoc(
 ): string {
   const background = opts.themed ? 'var(--color-base-100)' : '#fff'
   const themeAttr = opts.themed ? '' : ' data-theme="light"'
+  // The light state this document restores when it leaves dark: the same
+  // attribute the markup ships with (none, for a themed demo).
+  const lightTheme = opts.themed ? 'null' : "'light'"
   return `<!doctype html>
 <html lang="en"${themeAttr}>
 <head>
@@ -75,11 +89,40 @@ function demoDoc(
 <title>daisyUI — ${name}</title>
 <script>
   // Runs before the stylesheet is parsed, so the theme is already stamped on
-  // the first paint. Light is untouched: no attribute is written unless
-  // ?mode=dark is asked for.
-  if (new URLSearchParams(location.search).get('mode') === 'dark') {
-    document.documentElement.setAttribute('data-theme', 'dark')
-  }
+  // the first paint.
+  (function () {
+    var LIGHT_THEME = ${lightTheme}
+    var root = document.documentElement
+    // daisyUI's own dark mechanism, idempotent and reversible.
+    function applyMode(dark) {
+      if (dark) root.setAttribute('data-theme', 'dark')
+      else if (LIGHT_THEME) root.setAttribute('data-theme', LIGHT_THEME)
+      else root.removeAttribute('data-theme')
+    }
+    // Standalone override: ?mode= wins outright, no observation.
+    var param = new URLSearchParams(location.search).get('mode')
+    if (param) {
+      applyMode(param === 'dark')
+      return
+    }
+    // Otherwise follow the embedder's <html class="dark">.
+    var host = null
+    try {
+      if (window.parent !== window) host = window.parent.document.documentElement
+    } catch (e) {
+      host = null
+    }
+    if (!host) {
+      applyMode(false)
+      return
+    }
+    var sync = function () { applyMode(host.classList.contains('dark')) }
+    sync()
+    var observer = new MutationObserver(sync)
+    observer.observe(host, { attributes: true, attributeFilter: ['class'] })
+    // Held for the page lifetime so it is never collected.
+    window.__daisyuiModeObserver = observer
+  })()
 </script>
 <!-- Declared before the stylesheet so this layer sits BELOW every daisyUI
      layer: the reset must never win against a daisyUI rule. -->

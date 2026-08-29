@@ -195,16 +195,24 @@ function pascalCase(slug: string): string {
     published ESM build, both at a pinned version. One centered horizontal row.
     Only components with a body below get a demo.
 
-    Color scheme: the `mode` query parameter ("dark", anything else = light) is
-    read by an inline head script that stamps Mantine's own color-scheme hook,
-    `data-mantine-color-scheme`, on <html> before first paint — the exact
-    selector `@mantine/core@${DEMO_VERSION}/styles.css` keys its dark token
-    block on (`:root[data-mantine-color-scheme='dark']`). The same script hands
-    the value to the demo module via `window.__mantineColorScheme` so
-    MantineProvider's `forceColorScheme` agrees with the attribute. The page
-    canvas in dark is Mantine's own body token (`--mantine-color-body`, which
-    the dark block resolves to `--mantine-color-dark-7`), never a literal hex;
-    the light path keeps the original `#fff` rule untouched. */
+    Color scheme mechanism (`applyMode`): stamp Mantine's own color-scheme hook,
+    `data-mantine-color-scheme`, on <html> — the exact selector
+    `@mantine/core@${DEMO_VERSION}/styles.css` keys its dark token block on
+    (`:root[data-mantine-color-scheme='dark']`) — hand the value to the demo
+    module via `window.__mantineColorScheme`, and re-render the React root
+    through `window.__mantineRender` so MantineProvider's `forceColorScheme`
+    always agrees with the attribute. It is idempotent and switches both ways:
+    "light" restores Mantine's light tokens and the plain `#fff` canvas, "dark"
+    paints the canvas with Mantine's own body token (`--mantine-color-body`,
+    which the dark block resolves to `--mantine-color-dark-7`), never a hex.
+
+    Mode resolution runs in a head IIFE before first paint: an explicit `?mode=`
+    query parameter wins and is applied once (standalone testing, no
+    observation); otherwise the demo follows its embedding parent live — it
+    reads `dark` off the parent document's <html> classList and keeps a
+    MutationObserver on that element's `class` attribute for the page lifetime,
+    re-applying on every change. A cross-origin parent (or no parent at all)
+    throws on access and falls back to light. */
 function demoDocument(title: string, body: string): string {
   return `<!doctype html>
 <html lang="en" data-mantine-color-scheme="light">
@@ -214,12 +222,42 @@ function demoDocument(title: string, body: string): string {
 <title>${title}</title>
 <script>
   (function () {
-    var mode =
-      new URLSearchParams(window.location.search).get("mode") === "dark"
-        ? "dark"
-        : "light";
-    window.__mantineColorScheme = mode;
-    document.documentElement.setAttribute("data-mantine-color-scheme", mode);
+    function applyMode(dark) {
+      var scheme = dark ? "dark" : "light";
+      window.__mantineColorScheme = scheme;
+      document.documentElement.setAttribute("data-mantine-color-scheme", scheme);
+      if (typeof window.__mantineRender === "function") {
+        window.__mantineRender(scheme);
+      }
+    }
+    window.__mantineApplyMode = applyMode;
+
+    var param = new URLSearchParams(window.location.search).get("mode");
+    if (param !== null) {
+      applyMode(param === "dark");
+      return;
+    }
+
+    var root = null;
+    try {
+      if (window.parent !== window) {
+        root = window.parent.document.documentElement;
+      }
+    } catch (err) {
+      root = null;
+    }
+    if (!root) {
+      applyMode(false);
+      return;
+    }
+
+    applyMode(root.classList.contains("dark"));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains("dark"));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ["class"] });
+    // Held on window so the observer outlives this IIFE for the page lifetime.
+    window.__mantineModeObserver = observer;
   })();
 </script>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@mantine/core@${DEMO_VERSION}/styles.css" />
@@ -262,31 +300,52 @@ ${body}
 `
 }
 
-/** Demo bodies, keyed by docs slug. Scope for this pass: Button only. */
-const DEMO_BODIES: Record<string, { body: string; height: number }> = {
+/** Demo bodies, keyed by docs slug. Scope for this pass: Button only.
+    `imports` are the `@mantine/core` exports the row uses; `children` are the
+    provider's children, one `h(...)` call per line. */
+const DEMO_BODIES: Record<
+  string,
+  { imports: string; children: string; height: number }
+> = {
   button: {
     height: 130,
-    body: `  import { createElement as h } from "react";
-  import { createRoot } from "react-dom/client";
-  import { MantineProvider, Button } from "@mantine/core";
-
-  const row = h(
-    MantineProvider,
-    { forceColorScheme: window.__mantineColorScheme },
-    h(Button, { variant: "filled", color: "blue" }, "Primary"),
-    h(Button, { variant: "default" }, "Secondary"),
-    h(Button, { variant: "filled", color: "blue", disabled: true }, "Disabled")
-  );
-
-  createRoot(document.getElementById("root")).render(row);`,
+    imports: 'Button',
+    children: `        h(Button, { variant: "filled", color: "blue" }, "Primary"),
+        h(Button, { variant: "default" }, "Secondary"),
+        h(Button, { variant: "filled", color: "blue", disabled: true }, "Disabled")`,
   },
+}
+
+/** The module body: one persistent React root re-rendered by `render(scheme)`,
+    which the head script's `applyMode` calls through `window.__mantineRender`
+    on every parent color-scheme change — so a mode switch restyles in place
+    instead of reloading the document. */
+function demoModule(entry: { imports: string; children: string }): string {
+  return `  import { createElement as h } from "react";
+  import { createRoot } from "react-dom/client";
+  import { MantineProvider, ${entry.imports} } from "@mantine/core";
+
+  const root = createRoot(document.getElementById("root"));
+
+  function render(scheme) {
+    root.render(
+      h(
+        MantineProvider,
+        { forceColorScheme: scheme },
+${entry.children}
+      )
+    );
+  }
+
+  window.__mantineRender = render;
+  render(window.__mantineColorScheme);`
 }
 
 function demoFor(slug: string, name: string): ComponentDemo | null {
   const entry = DEMO_BODIES[slug]
   if (!entry) return null
   return {
-    html: demoDocument(`Mantine ${name}`, entry.body),
+    html: demoDocument(`Mantine ${name}`, demoModule(entry)),
     height: entry.height,
   }
 }
@@ -337,7 +396,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
           snapshot: 'sources/mantine',
         },
       ],
-      notes: `Inventory is every /core/<slug> page in the deployed mantine.dev sitemap — Mantine's own machine-readable list of documented core components. Display names are derived from the docs slug (kebab → PascalCase, Mantine's export naming); docsUrl is the sitemap <loc>. The canonical-taxonomy mapping is an editorial table in the extractor, not extracted. The sitemap itself is not version-pinned (live-site tier), but the demo documents load only Mantine's published assets at pinned versions — @mantine/core@${DEMO_VERSION} styles.css from jsDelivr and the @mantine/core@${DEMO_VERSION} / react@${REACT_VERSION} ESM builds from esm.sh — so demos are reproducible. Demos honour a \`mode\` query parameter: \`mode=dark\` stamps Mantine's own \`data-mantine-color-scheme="dark"\` on <html> (the selector its published styles.css keys the dark token block on) and paints the canvas with Mantine's \`--mantine-color-body\` token; anything else is the unchanged light rendering. Demo coverage in this pass is Button only; every other entry is inventory (name + docsUrl + mapping) with demo null.`,
+      notes: `Inventory is every /core/<slug> page in the deployed mantine.dev sitemap — Mantine's own machine-readable list of documented core components. Display names are derived from the docs slug (kebab → PascalCase, Mantine's export naming); docsUrl is the sitemap <loc>. The canonical-taxonomy mapping is an editorial table in the extractor, not extracted. The sitemap itself is not version-pinned (live-site tier), but the demo documents load only Mantine's published assets at pinned versions — @mantine/core@${DEMO_VERSION} styles.css from jsDelivr and the @mantine/core@${DEMO_VERSION} / react@${REACT_VERSION} ESM builds from esm.sh — so demos are reproducible. Demos follow their embedding parent's color scheme live: a head script reads \`dark\` off the parent document's <html> classList and keeps a MutationObserver on that element's \`class\` attribute, applying Mantine's own \`data-mantine-color-scheme\` on <html> (the selector its published styles.css keys the dark token block on), painting the canvas with Mantine's \`--mantine-color-body\` token in dark, and re-rendering the React root so MantineProvider's \`forceColorScheme\` agrees — both directions, no reload. A cross-origin or absent parent falls back to light; an explicit \`?mode=\` query parameter overrides observation and is applied once (standalone testing). Demo coverage in this pass is Button only; every other entry is inventory (name + docsUrl + mapping) with demo null.`,
     },
   }
 }

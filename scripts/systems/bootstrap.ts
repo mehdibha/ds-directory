@@ -113,17 +113,37 @@ export function parseSidebar(yaml: string): { section: string; page: string }[] 
   return out
 }
 
-/** Bootstrap 5.3's own color-mode mechanism: `data-bs-theme="dark"` on the root
+/** Bootstrap 5.3's own color-mode mechanism: `data-bs-theme` on the root
     element, which bootstrap.min.css targets via `[data-bs-theme=dark]` to
     redefine the CSS custom properties (including `--bs-body-bg`, #212529 in
-    dark / #fff in light). The demo reads `?mode=dark` from its own URL and sets
-    the attribute inline in <head>, before first paint; anything other than
-    "dark" leaves the document in Bootstrap's light mode exactly as before. */
+    dark / #fff in light). applyMode(dark) writes "dark" or "light" — idempotent
+    and symmetric, so toggling back restores Bootstrap's light ground exactly.
+
+    Resolution runs in <head>, before first paint: an explicit `?mode=` in the
+    demo's own URL is a standalone-testing override applied once with no
+    observation; otherwise the demo mirrors the embedding parent's
+    `<html class="dark">` and keeps mirroring it for the page lifetime via a
+    MutationObserver on the parent root's class attribute. Cross-origin parents
+    (the try/catch throws) and top-level loads have no readable root, so they
+    fall back to light. */
 const MODE_SCRIPT = `<script>
   (function () {
+    function applyMode(dark) {
+      document.documentElement.setAttribute(
+        'data-bs-theme', dark ? 'dark' : 'light');
+    }
     var mode = new URLSearchParams(window.location.search).get('mode');
-    document.documentElement.setAttribute(
-      'data-bs-theme', mode === 'dark' ? 'dark' : 'light');
+    if (mode !== null) { applyMode(mode === 'dark'); return; }
+    var root = null;
+    try { if (window.parent !== window) root = window.parent.document.documentElement; }
+    catch (e) { root = null; }
+    if (!root) { applyMode(false); return; }
+    applyMode(root.classList.contains('dark'));
+    var observer = new MutationObserver(function () {
+      applyMode(root.classList.contains('dark'));
+    });
+    observer.observe(root, { attributes: true, attributeFilter: ['class'] });
+    window.__dsModeObserver = observer;
   })();
 </script>`
 
@@ -217,7 +237,7 @@ function extractComponents(sourcesDir: string): ComponentsFile {
         },
       ],
       notes:
-        `Inventory read from site/data/sidebar.yml at v${pkg.version} (the docs site's own page index); docs URLs derived by the same title slugification the site uses. Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads Bootstrap's published bootstrap.min.css from jsDelivr at the same pinned version with its published SRI hash — a version-pinned URL, not a live fetch. The demo honours ?mode=dark via Bootstrap's own data-bs-theme="dark" root attribute, which that same stylesheet defines.`,
+        `Inventory read from site/data/sidebar.yml at v${pkg.version} (the docs site's own page index); docs URLs derived by the same title slugification the site uses. Canonical taxonomy mapping is an explicit table in the extractor. The Button demo loads Bootstrap's published bootstrap.min.css from jsDelivr at the same pinned version with its published SRI hash — a version-pinned URL, not a live fetch. The demo switches color mode via Bootstrap's own data-bs-theme root attribute, which that same stylesheet defines: an explicit ?mode= in its URL is applied once as a standalone override, otherwise it mirrors the embedding parent document's <html class="dark"> live through a MutationObserver.`,
     }),
   }
 }
